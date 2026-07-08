@@ -19,8 +19,8 @@ export default {
         if (!fs.existsSync(storeFile())) throw new Error('no store.json to back up yet');
         const name = `${Date.now()}${a.label ? '-' + safe(a.label) : ''}.json`;
         const dest = path.join(ensure(backupsDir()), name);
-        fs.copyFileSync(storeFile(), dest);
-        await withStore(s => logEvent(s, 'backup.now', a.by || '', { file: name }));
+        // Copy under the store lock so we never snapshot a half-written store.json.
+        await withStore(s => { fs.copyFileSync(storeFile(), dest); logEvent(s, 'backup.now', a.by || '', { file: name }); });
         ctx.print(`  ✓ backup ${name}  (${fs.statSync(dest).size} bytes)`);
       },
     },
@@ -42,8 +42,10 @@ export default {
         if (!file) throw new Error('restore needs a backup file name (see `backup list`)');
         const src = path.join(backupsDir(), path.basename(file)); // basename: no traversal out of backups/
         if (!fs.existsSync(src)) throw new Error(`backup not found: ${file}`);
-        try { JSON.parse(fs.readFileSync(src, 'utf8')); } catch { throw new Error(`backup is not valid JSON: ${file}`); }
-        fs.copyFileSync(src, ensure(orbitDir()) && storeFile());
+        let data;
+        try { data = JSON.parse(fs.readFileSync(src, 'utf8')); } catch { throw new Error(`backup is not valid JSON: ${file}`); }
+        // Apply under the lock so a concurrent writer can't clobber the restore.
+        await withStore(s => { for (const k of Object.keys(s)) delete s[k]; Object.assign(s, data); });
         ctx.print(`  ✓ restored ${path.basename(file)} -> store.json`);
       },
     },

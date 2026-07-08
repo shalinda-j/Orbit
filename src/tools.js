@@ -34,6 +34,8 @@ export const BUILTIN_TOOLS = [
     description: 'Write or overwrite a file with new content.',
     parameters: ['path', 'content'],
     execute: async ({ path: filePath, content }) => {
+      // Refuse when no content was provided (e.g. a truncated tag) — never blank an existing file.
+      if (content === undefined) return `Error: write_file needs content (none provided — the tool call may have been truncated). File left unchanged.`;
       const fullPath = path.resolve(process.cwd(), filePath);
       try {
         fs.mkdirSync(path.dirname(fullPath), { recursive: true });
@@ -71,6 +73,7 @@ export const BUILTIN_TOOLS = [
     description: 'Execute a command in the local terminal shell.',
     parameters: ['command'],
     execute: async ({ command }) => {
+      if (!command) return `Error: run_command needs a command string.`;
       const blocklist = ['rm -rf /', 'del /s', 'format', 'mkfs'];
       if (blocklist.some(b => command.includes(b))) {
         return `Error: Command blocked for safety.`;
@@ -85,37 +88,51 @@ export const BUILTIN_TOOLS = [
   }
 ];
 
+// Parse an attribute string, honoring the SAME quote that opened each value.
+// Values may contain the other quote type and '>' without truncating.
+function parseAttrs(str) {
+  const params = {};
+  const re = /(\w+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
+  let m;
+  while ((m = re.exec(str)) !== null) params[m[1]] = m[2] !== undefined ? m[2] : m[3];
+  return params;
+}
+
+/**
+ * Parse the first <tool:NAME .../> or <tool:NAME ...>body</tool:NAME> tag.
+ * Scans attributes quote-aware (so `>` and the other quote type inside a value
+ * don't break it) and requires a real self-close ('/>') or a matching close tag —
+ * a TRUNCATED tag returns null instead of a dangerous parameterless call.
+ */
 export function parseToolCall(content) {
-  // 1. Block tag format: <tool:write_file path="src/test.txt">content</tool:write_file>
-  const blockMatch = content.match(/<tool:(\w+)\s*([^>]*)>([\s\S]*?)<\/tool:\1>/);
-  if (blockMatch) {
-    const name = blockMatch[1];
-    const attrsStr = blockMatch[2];
-    const innerContent = blockMatch[3];
-    const params = { content: innerContent };
+  const open = content.match(/<tool:(\w+)/);
+  if (!open) return null;
+  const name = open[1];
 
-    const attrRegex = /(\w+)=["']([^"']*)["']/g;
-    let attrMatch;
-    while ((attrMatch = attrRegex.exec(attrsStr)) !== null) {
-      params[attrMatch[1]] = attrMatch[2];
-    }
-    return { name, params };
+  // Walk the attribute region until an unquoted '>' ends the tag.
+  let i = open.index + open[0].length;
+  let attrs = '';
+  let quote = null;
+  for (; i < content.length; i++) {
+    const ch = content[i];
+    if (quote) { attrs += ch; if (ch === quote) quote = null; }
+    else if (ch === '"' || ch === "'") { quote = ch; attrs += ch; }
+    else if (ch === '>') break;
+    else attrs += ch;
   }
+  if (i >= content.length) return null; // no closing '>' — truncated tag, ignore
 
-  // 2. Self-closing format: <tool:view_file path="src/tui.js" />
-  const inlineMatch = content.match(/<tool:(\w+)\s*([^>]*)\/?>/);
-  if (inlineMatch) {
-    const name = inlineMatch[1];
-    const attrsStr = inlineMatch[2];
-    const params = {};
+  let selfClose = false;
+  if (attrs.trimEnd().endsWith('/')) { selfClose = true; attrs = attrs.trimEnd().slice(0, -1); }
 
-    const attrRegex = /(\w+)=["']([^"']*)["']/g;
-    let attrMatch;
-    while ((attrMatch = attrRegex.exec(attrsStr)) !== null) {
-      params[attrMatch[1]] = attrMatch[2];
-    }
-    return { name, params };
-  }
+  const params = parseAttrs(attrs);
+  if (selfClose) return { name, params };
 
-  return null;
+  // Block form — require the matching close tag; unterminated block ⇒ ignore.
+  const close = `</tool:${name}>`;
+  const bodyStart = i + 1;
+  const closeIdx = content.indexOf(close, bodyStart);
+  if (closeIdx === -1) return null;
+  params.content = content.slice(bodyStart, closeIdx);
+  return { name, params };
 }

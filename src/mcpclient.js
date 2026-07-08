@@ -7,7 +7,13 @@ import { loadConfig } from './orbitconfig.js';
 // ─────────────────────────────────────────────
 
 export function connect(server) {
-  const child = spawn(server.command, server.args || [], { shell: true, stdio: ['pipe', 'pipe', 'inherit'] });
+  // shell:true lets Windows resolve .cmd shims (npx.cmd), but Node won't quote args for the shell,
+  // so quote any arg with whitespace ourselves — otherwise "C:\Program Files\x" splits into two args.
+  const rawArgs = server.args || [];
+  const args = process.platform === 'win32'
+    ? rawArgs.map(a => (/\s/.test(a) && !/^".*"$/.test(a)) ? `"${a}"` : a)
+    : rawArgs;
+  const child = spawn(server.command, args, { shell: true, stdio: ['pipe', 'pipe', 'inherit'] });
   const pending = new Map();
   let n = 0, buf = '';
 

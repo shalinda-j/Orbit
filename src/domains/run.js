@@ -8,7 +8,7 @@ import { withStore, nextId, logEvent } from '../store.js';
 const PROVIDERS = PROVIDER_NAMES;
 
 async function doRun(a, ctx) {
-  const goal = a._[0] || a.goal;
+  const goal = a._.length ? a._.join(' ') : a.goal; // join words so unquoted multi-word goals aren't truncated
   if (!goal) throw new Error('need a goal string: orbit run "build X"');
 
   const active = PROVIDERS.filter(isProviderConfigured);

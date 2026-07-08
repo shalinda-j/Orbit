@@ -66,7 +66,8 @@ export default {
         if (!name || !instructions) throw new Error('usage: skill new <name> "instructions..." [--desc "..."]');
         fs.mkdirSync(skillsDir(), { recursive: true });
         const file = path.join(skillsDir(), `${name}.md`);
-        const body = `# ${name}\n${args.desc ? `description: ${args.desc}\n` : ''}\n${instructions}\n`;
+        // Write in the exact shape parseMd reads: a leading "description:" line (only when given), then the body.
+        const body = (args.desc ? `description: ${args.desc}\n\n` : '') + `${instructions}\n`;
         fs.writeFileSync(file, body, 'utf8');
         ctx.print(`  wrote ${file}`);
       },

@@ -1,0 +1,37 @@
+# Changelog
+
+## v1.0.1
+
+Stability release. A 30-agent adversarial audit of every command found 19 real bugs; all are fixed and covered by regression tests.
+
+### Fixed — tool calling (high impact)
+- **Truncated `<tool:write_file>` no longer wipes files.** A tool tag cut off by `max_tokens` was mis-parsed as a parameterless call and blanked the target file. The parser now requires a real `/>` or matching close tag (truncated ⇒ ignored), and `write_file` refuses when no content is provided.
+- **Tool args with `>` or mixed quotes are preserved.** `run_command command="npm test > out.txt"` and `command="git commit -m 'fix'"` no longer truncate — attributes are parsed quote-aware.
+
+### Fixed — TUI
+- **Ctrl+C now really interrupts.** A running task's output/spinner no longer keeps clobbering the prompt after Ctrl+C, and an aborted run can't reset state or allow overlapping concurrent tasks (generation-guarded).
+- **A failing slash command can't crash or freeze the TUI.** The command chain always resolves; one error no longer poisons every later `/command`.
+- **`/toString`, `/constructor` etc.** are no longer mistaken for domain commands (null-prototype registry).
+- `[FINISHED]` control tag is stripped from displayed output.
+
+### Fixed — commands
+- **Multi-word goals** (`orbit run build a snake game`) are kept whole instead of truncated to `build` — in `run` and `orchestrate`.
+- **`team join --role` with a missing value** is rejected instead of storing a boolean that permanently broke `team status`.
+- **`finding audit`** seeds tasks as `todo` so they show on the board (were invisible `open`).
+- **`github` / `gitlab`** flag values with spaces/metacharacters are shell-quoted (no more split/misfired commands), and `pr`/`mr`/`issue` no longer drop flags when given no positional.
+- **`skill new`** files now round-trip: `--desc` shows correctly and no longer leaks into the instructions.
+- **Ollama** agents from the team generator work: the `default` model sentinel is resolved.
+
+### Fixed — data & platform
+- **Brain notes with CRLF** line endings parse correctly on Windows (frontmatter no longer leaks into the body).
+- **`backup now` / `backup restore`** run under the store lock (no torn snapshots, no lost restores).
+- **MCP server args with spaces** (e.g. `C:\Program Files\...`) are quoted on Windows.
+- **`spawn`** reports terminal-launch failures instead of always claiming success.
+
+### Added
+- Multi-provider team e2e test proving different providers/models on different agents communicate, route, use tools, and synthesize as one team.
+- v1.0.1 bug-fix regression suite. Test suites: 8, all green.
+
+## v1.0.0
+
+Initial release — multi-agent, multi-provider AI team CLI: shared task board, brain, 16 providers, MCP bridge, plugins/hooks/skills, GitHub/GitLab, installers.

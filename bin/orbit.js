@@ -95,6 +95,8 @@ let isProcessing = false;
 let usedSubscription = false;    // did any run use the claude-code subscription? (affects cost display)
 let exiting = false;             // guard exitGracefully against re-entry (rl.close re-emits 'close')
 let pending = Promise.resolve(); // serializes slash-command work so exit can wait for it to flush
+let taskGen = 0;                 // bumped on each task start AND on Ctrl+C, to invalidate an aborted run
+let activeSpinner = null;        // current task's spinner, so SIGINT can stop it
 
 // Team generation now lives in ../src/genesis.js (shared with `orbit run`).
 
@@ -178,8 +180,11 @@ async function main() {
     }
 
     // Slash commands — serialize so bulk/pasted input runs in order and exit can await it.
+    // The .catch keeps `pending` resolved: one failing command can't poison the chain or crash the TUI.
     if (trimmed.startsWith('/')) {
-      pending = pending.then(() => handleSlashCommand(trimmed, rl, [], providerStatuses));
+      pending = pending
+        .then(() => handleSlashCommand(trimmed, rl, [], providerStatuses))
+        .catch((err) => { console.log(COLORS.dim('  └ ') + COLORS.error(err.message)); rl.prompt(); });
       await pending;
       return;
     }
@@ -199,7 +204,10 @@ async function main() {
 
     isProcessing = true;
     taskCount++;
+    const myGen = ++taskGen;               // this task's identity; Ctrl+C bumps taskGen to abort it
+    const aborted = () => myGen !== taskGen;
     const spinner = new Spinner();
+    activeSpinner = spinner;
     const supervisorProvider = preferred(activeProviders);
     const subscription = supervisorProvider === 'claude-code';
     if (subscription) usedSubscription = true;
@@ -217,13 +225,15 @@ async function main() {
           messages: [{ role: 'user', content: trimmed }],
         });
         spinner.stop();
-        console.log(renderAgentResponse('Orbit', supervisorProvider, res.content, res.usage));
         const stats = { promptTokens: res.usage.promptTokens, completionTokens: res.usage.completionTokens, totalTokens: res.usage.totalTokens, breakdown: { Orbit: res.usage } };
-        console.log(renderTokenSummary(stats, { subscription }));
+        if (!aborted()) {
+          console.log(renderAgentResponse('Orbit', supervisorProvider, res.content, res.usage));
+          console.log(renderTokenSummary(stats, { subscription }));
+        }
         accumulateTokens(stats);
         await emit('run.after', { task: trimmed, mode });
-        isProcessing = false;
-        rl.prompt();
+        activeSpinner = null;
+        if (!aborted()) { isProcessing = false; rl.prompt(); }
         return;
       }
 
@@ -254,6 +264,7 @@ async function main() {
       const orchestrator = new Orchestrator({ agents, supervisorProvider, toolPolicy, mcpTools });
 
       const onAgentSpeak = (agentName, text, isThinking, usage) => {
+        if (aborted()) { spinner.stop(); return; } // Ctrl+C — suppress the orphaned run's output
         if (isThinking) {
           spinner.start(`${agentName} is thinking`);
         } else {
@@ -279,28 +290,39 @@ async function main() {
 
       spinner.stop();
 
-      console.log(renderFinalResult(result.finalOutput));
-      console.log(renderTokenSummary(result.tokenStats, { subscription }));
+      if (!aborted()) {
+        console.log(renderFinalResult(result.finalOutput));
+        console.log(renderTokenSummary(result.tokenStats, { subscription }));
+      }
       accumulateTokens(result.tokenStats);
       await emit('run.after', { task: trimmed, mode });
 
     } catch (err) {
       spinner.stop();
-      console.log('');
-      console.log(COLORS.dim('  │ ') + COLORS.error.bold('Error'));
-      console.log(COLORS.dim('  └ ') + COLORS.error(err.message));
-      console.log('');
+      if (!aborted()) {
+        console.log('');
+        console.log(COLORS.dim('  │ ') + COLORS.error.bold('Error'));
+        console.log(COLORS.dim('  └ ') + COLORS.error(err.message));
+        console.log('');
+      }
     }
 
-    isProcessing = false;
-    rl.prompt();
+    activeSpinner = null;
+    // Only the still-current task resets state — an aborted run must not re-enable input.
+    if (!aborted()) {
+      isProcessing = false;
+      rl.prompt();
+    }
   });
 
   // Ctrl+C
   rl.on('SIGINT', () => {
     if (isProcessing) {
+      taskGen++;                 // invalidate the running task so it stops printing / can't reset state
+      if (activeSpinner) activeSpinner.stop();
+      activeSpinner = null;
       console.log('');
-      console.log(renderSystemMessage('Task interrupted.'));
+      console.log(renderSystemMessage('Task interrupted (its output is suppressed; the model call may still finish in the background).'));
       isProcessing = false;
       rl.prompt();
     } else {
@@ -473,7 +495,6 @@ function exitGracefully(rl) {
   if (sessionTokens.totalTokens > 0) {
     console.log(renderTokenSummary(sessionTokens, { subscription: usedSubscription }));
   }
-  console.log(COLORS.icon('     ..▄▄████▄▄..'));
   console.log(COLORS.muted(`  Orbit session ended · ${taskCount} task(s)`));
   console.log('');
   rl.close();

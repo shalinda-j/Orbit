@@ -41,14 +41,16 @@ export default {
         const cli = (a.cli || 'claude').toLowerCase();
         const dir = a.dir || ctx.cwd;
 
-        let opened = true;
-        try {
-          spawn(terminalCmd(cli, dir, a.terminal), { shell: true, detached: true, stdio: 'ignore' }).unref();
-        } catch (e) {
-          opened = false;
-          ctx.print(`  ! Could not open a terminal automatically (${e.message}).`);
-          ctx.print(`  Open one yourself:  cd ${dir} && ${CLI_COMMANDS[cli] || cli}`);
-        }
+        // With shell:true the shell always spawns; a missing terminal (no `wt`) fails ASYNC via
+        // the shell's exit code / 'error' event — never a sync throw. Report the real outcome.
+        const fallback = () => {
+          ctx.print(`  ! Could not open a terminal automatically. Open one yourself:`);
+          ctx.print(`      cd ${dir} && ${CLI_COMMANDS[cli] || cli}`);
+        };
+        const child = spawn(terminalCmd(cli, dir, a.terminal), { shell: true, detached: true, stdio: 'ignore' });
+        child.on('error', fallback);
+        child.on('exit', (code) => { if (code) fallback(); });
+        child.unref();
 
         await withStore(s => {
           s.agents.push({ role, cli, dir, terminal: a.terminal || 'wt', startedAt: Date.now() });
@@ -58,7 +60,7 @@ export default {
           logEvent(s, 'spawn.new', a.by || 'PM', { role, cli });
         });
 
-        ctx.print(`  ✓ spawned ${role} (${cli})${opened ? ' in a new terminal' : ''}. Kickoff posted to the channel.`);
+        ctx.print(`  ✓ launching ${role} (${cli}) in a new terminal. Kickoff posted to the channel.`);
         ctx.print(`    It joins with:  orbit msg read --mention ${role}`);
       },
     },

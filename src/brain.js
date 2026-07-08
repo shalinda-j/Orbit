@@ -23,12 +23,12 @@ function toList(tags) {
 
 function parse(file) {
   const raw = fs.readFileSync(file, 'utf8');
-  const m = raw.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
+  const m = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/); // CRLF-tolerant (Windows/Notepad/git autocrlf)
   const meta = { title: path.basename(file, '.md'), category: '', tags: [], updated: '' };
   let body = raw;
   if (m) {
     body = m[2];
-    for (const line of m[1].split('\n')) {
+    for (const line of m[1].split(/\r?\n/)) {
       const kv = line.match(/^(\w+):\s*(.*)$/);
       if (!kv) continue;
       if (kv[1] === 'tags') meta.tags = toList(kv[2]);

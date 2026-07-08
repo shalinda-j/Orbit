@@ -122,8 +122,14 @@ export function renderBanner(providerStatuses, cwd, state = {}) {
 // ─────────────────────────────────────────────
 // Agent Response (Claude Code flat style)
 // ─────────────────────────────────────────────
+// The [FINISHED] tag is an internal control token — never show it to the user.
+function stripControlTags(text) {
+  return String(text).replace(/\s*\[FINISHED\]\s*/g, ' ').trim();
+}
+
 export function renderAgentResponse(agentName, model, content, usage = null) {
   const color = getAgentColor(agentName);
+  content = stripControlTags(content);
   const lines = [];
 
   // Agent header line
@@ -330,6 +336,7 @@ export function renderTokenSummary(tokenStats, opts = {}) {
 // Final Result Block
 // ─────────────────────────────────────────────
 export function renderFinalResult(content) {
+  content = stripControlTags(content);
   const lines = [];
   lines.push('');
   lines.push('  ' + COLORS.success.bold('✦ Final Result'));

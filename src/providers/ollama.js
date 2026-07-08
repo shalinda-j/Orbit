@@ -7,7 +7,8 @@ export class OllamaProvider {
   }
 
   async chat({ systemPrompt, messages, model, temperature = 0.7 }) {
-    const selectedModel = model || this.defaultModel;
+    // 'default' is the sentinel the team generator emits — resolve it to the configured model.
+    const selectedModel = (model && model !== 'default') ? model : this.defaultModel;
     const url = `${this.baseUrl}/api/chat`;
 
     const formattedMessages = [];

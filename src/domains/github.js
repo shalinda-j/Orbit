@@ -9,30 +9,26 @@ function installed() {
   return _has;
 }
 
-// Spawn `gh` with the given args, inherit stdio so output streams live.
+// Shell-quote one arg so values with spaces / metacharacters survive shell:true.
+function shq(s) {
+  s = String(s);
+  return process.platform === 'win32' ? `"${s.replace(/"/g, '""')}"` : `'${s.replace(/'/g, `'\\''`)}'`;
+}
+
+// Run `gh` with the given args (each quoted), inherit stdio so output streams live.
 function run(ghArgs) {
   if (!installed()) {
     console.log('GitHub CLI not found — install from https://cli.github.com then run: gh auth login');
     return Promise.resolve(1);
   }
   return new Promise((resolve) => {
-    const p = spawn('gh', ghArgs, { shell: true, stdio: 'inherit' });
-    let missing = false;
-    p.on('error', (err) => {
-      if (err.code === 'ENOENT') {
-        missing = true;
-        console.log('GitHub CLI not found — install from https://cli.github.com then run: gh auth login');
-      } else {
-        console.log('gh failed: ' + err.message);
-      }
-      resolve(1);
-    });
-    p.on('close', (code) => { if (!missing) resolve(code ?? 0); });
+    const p = spawn('gh ' + ghArgs.map(shq).join(' '), { shell: true, stdio: 'inherit' });
+    p.on('error', (err) => { console.log('gh failed: ' + err.message); resolve(1); });
+    p.on('close', (code) => resolve(code ?? 0));
   });
 }
 
-// Rebuild the flags the parser stripped off args, so passthrough keeps them.
-// ponytail: values are re-quoted naively; fine for gh's typical flag shapes.
+// Rebuild the flags the parser stripped off args (raw; run() quotes them).
 function flagsOf(a) {
   const out = [];
   for (const [k, v] of Object.entries(a)) {
@@ -60,11 +56,11 @@ export default {
     },
     pr: {
       desc: 'github pr [list|view <n>|create ...] — pass through to gh pr',
-      run: (a) => run(['pr', ...(a._.length ? [...a._, ...flagsOf(a)] : ['list'])]),
+      run: (a) => run(['pr', ...(a._.length ? a._ : ['list']), ...flagsOf(a)]),
     },
     issue: {
       desc: 'github issue [list|...] — pass through to gh issue',
-      run: (a) => run(['issue', ...(a._.length ? [...a._, ...flagsOf(a)] : ['list'])]),
+      run: (a) => run(['issue', ...(a._.length ? a._ : ['list']), ...flagsOf(a)]),
     },
   },
 };

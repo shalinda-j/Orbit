@@ -10,29 +10,25 @@ function installed() {
 }
 
 // Spawn `glab` with the given args, inherit stdio so output streams live.
+// Shell-quote one arg so values with spaces / metacharacters survive shell:true.
+function shq(s) {
+  s = String(s);
+  return process.platform === 'win32' ? `"${s.replace(/"/g, '""')}"` : `'${s.replace(/'/g, `'\\''`)}'`;
+}
+
 function run(glabArgs) {
   if (!installed()) {
     console.log('GitLab CLI not found — install from https://gitlab.com/gitlab-org/cli then run: glab auth login');
     return Promise.resolve(1);
   }
   return new Promise((resolve) => {
-    const p = spawn('glab', glabArgs, { shell: true, stdio: 'inherit' });
-    let missing = false;
-    p.on('error', (err) => {
-      if (err.code === 'ENOENT') {
-        missing = true;
-        console.log('GitLab CLI not found — install from https://gitlab.com/gitlab-org/cli then run: glab auth login');
-      } else {
-        console.log('glab failed: ' + err.message);
-      }
-      resolve(1);
-    });
-    p.on('close', (code) => { if (!missing) resolve(code ?? 0); });
+    const p = spawn('glab ' + glabArgs.map(shq).join(' '), { shell: true, stdio: 'inherit' });
+    p.on('error', (err) => { console.log('glab failed: ' + err.message); resolve(1); });
+    p.on('close', (code) => resolve(code ?? 0));
   });
 }
 
-// Rebuild the flags the parser stripped off args, so passthrough keeps them.
-// ponytail: values are re-quoted naively; fine for glab's typical flag shapes.
+// Rebuild the flags the parser stripped off args (raw; run() quotes them).
 function flagsOf(a) {
   const out = [];
   for (const [k, v] of Object.entries(a)) {
@@ -57,11 +53,11 @@ export default {
     },
     mr: {
       desc: 'gitlab mr [list|view <n>|create ...] — pass through to glab mr',
-      run: (a) => run(['mr', ...(a._.length ? [...a._, ...flagsOf(a)] : ['list'])]),
+      run: (a) => run(['mr', ...(a._.length ? a._ : ['list']), ...flagsOf(a)]),
     },
     issue: {
       desc: 'gitlab issue [list|...] — pass through to glab issue',
-      run: (a) => run(['issue', ...(a._.length ? [...a._, ...flagsOf(a)] : ['list'])]),
+      run: (a) => run(['issue', ...(a._.length ? a._ : ['list']), ...flagsOf(a)]),
     },
   },
 };

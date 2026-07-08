@@ -146,8 +146,8 @@ export default {
           for (const title of checklist) {
             const id = nextId(store, 'task');
             store.tasks.push({
-              id, title, assignee: null, status: 'open', priority: 'high',
-              dependsOn: [], parentId: null, acceptance: '', createdBy: by,
+              id, title, assignee: '', status: 'todo', priority: 'high', // 'todo' is a real board column; 'open' would be invisible
+              dependsOn: [], parentId: 0, acceptance: '', createdBy: by,
               createdAt: now, updatedAt: now,
             });
             ids.push(id);

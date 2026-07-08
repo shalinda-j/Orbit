@@ -17,7 +17,7 @@ const domainsDir = path.join(__dirname, 'domains');
 let _domains = null;
 export async function loadDomains() {
   if (_domains) return _domains;
-  _domains = {};
+  _domains = Object.create(null); // null prototype: `/toString`, `/constructor` etc. aren't treated as domains
   for (const f of fs.readdirSync(domainsDir)) {
     if (!f.endsWith('.js')) continue;
     const mod = await import(pathToFileURL(path.join(domainsDir, f)).href);

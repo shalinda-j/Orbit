@@ -23,7 +23,7 @@ export default {
     default: {
       desc: 'orchestrate "goal" --team "Backend:claude, QA:codex" [--dir path] [--acceptance "a;b"] [--by PM]',
       run: async (a, ctx) => {
-        const goal = a._[0] || a.goal;
+        const goal = a._.length ? a._.join(' ') : a.goal; // join words so unquoted multi-word goals aren't truncated
         if (!goal) throw new Error('need a goal: orchestrate "build X" --team "Role:cli, ..."');
         const team = parseTeam(a.team);
         if (!team.length) throw new Error('need --team "Role:cli, Role:cli"');

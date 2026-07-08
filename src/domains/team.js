@@ -10,7 +10,7 @@ export default {
       desc: 'Join as a role: team join --role Backend --cli claude [--skills a,b]',
       run: async (a, ctx) => {
         const role = a.role || a._[0];
-        if (!role) throw new Error('need --role');
+        if (!role || typeof role !== 'string') throw new Error('need --role <name>'); // bare --role parses as `true`
         await withStore(s => {
           s.team[role] = {
             role, cli: a.cli || 'human', status: 'online',
