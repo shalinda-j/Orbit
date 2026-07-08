@@ -30,8 +30,8 @@
     "test": "node tests/test.js && node tests/test-team.js && node tests/test-claudecode.js && node tests/test-providers.js && node tests/test-extensions.js && node tests/test-mcp.js && node tests/test-e2e-team.js && node tests/test-bugfixes.js"
   },
   "keywords": ["ai", "cli", "agents", "multi-agent", "llm", "mcp", "claude", "openai", "orbit"],
-  "author": "",
-  "license": "ISC",
+  "author": "Shalinda Jayasinghe",
+  "license": "MIT",
   "dependencies": {
     "chalk": "^5.6.2",
     "dotenv": "^17.4.2"

@@ -1,4 +1,11 @@
 import chalk from 'chalk';
+import { readFileSync } from 'fs';
+
+// Single source of truth for the version — read from package.json (no hardcoded string to drift).
+export const VERSION = (() => {
+  try { return JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version; }
+  catch { return '0.0.0'; }
+})();
 
 // ─────────────────────────────────────────────
 // Color Palette (Claude Code-inspired dark theme)
@@ -91,7 +98,7 @@ export function renderBanner(providerStatuses, cwd, state = {}) {
   for (const row of wm) lines.push(wmPad + row);
 
   lines.push('');
-  const tag = 'Multi-Agent Team · Multi-Provider · v1.0.0';
+  const tag = `Multi-Agent Team · Multi-Provider · v${VERSION}`;
   lines.push(center(cols, tag.length) + COLORS.muted(tag));
   const dir = cwd || process.cwd();
   lines.push(center(cols, dir.length) + COLORS.dim(dir));
