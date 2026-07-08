@@ -64,4 +64,21 @@ assert(recalled.length === 1 && recalled[0].body.includes('JWT'), 'a saved run i
 brainSave({ title: 'Unrelated note', content: 'nothing', category: 'notes' });
 assert(brainSearch({ query: 'build auth', category: 'runs' }).length === 1, 'recall is scoped to the "runs" category');
 
+// ── write_file shows a compact edit stat, not code ──
+let editMsg = '';
+registerProvider('fw', {
+  name: 'fw',
+  async chat({ messages }) {
+    const wrote = messages.some(m => m.content.includes('[Tool Output]'));
+    return { content: wrote ? '[FINISHED] wrote it' : '<tool:write_file path="hello.txt">line1\nline2</tool:write_file>', usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 } };
+  },
+});
+const writer = new Agent({ name: 'Writer', role: 'w', instructions: 'x', provider: 'fw' });
+const orch2 = new Orchestrator({ agents: [writer], supervisorProvider: 'fw', toolPolicy: 'all' });
+await orch2.runAgentWithTools(writer, [{ role: 'user', content: 'go' }], (name, text, thinking) => {
+  if (name === 'System' && !thinking && text.startsWith('✎ Edited')) editMsg = text;
+});
+assert(/^✎ Edited hello\.txt {2}\+2 -0$/.test(editMsg), 'write_file emits a compact "Edited <file> +2 -0" stat (new 2-line file)');
+assert(fs.existsSync(path.join(tmp, 'hello.txt')), 'the file was actually written');
+
 console.log('\nFeature tests passed.');

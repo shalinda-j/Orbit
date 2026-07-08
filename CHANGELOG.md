@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.3.1
+
+### Changed
+- File edits now show a compact **`✎ Edited <file>  +N -M`** stat (real added/removed line diff) instead of dumping the file contents. Any `write_file` code block in a shown message is collapsed to the same one-liner.
+
 ## v1.3.0
 
 ### Added

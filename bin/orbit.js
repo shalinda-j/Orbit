@@ -18,7 +18,7 @@ import {
   renderBanner, renderAgentResponse, renderSystemMessage,
   renderPrompt, renderStatusBar, renderHelp, renderAgentList,
   renderTokenSummary, renderFinalResult, renderTaskHeader,
-  handleOf, agentResponseLines, renderRoster, Spinner,
+  handleOf, agentResponseLines, renderRoster, renderEdit, Spinner,
 } from '../src/tui.js';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -409,7 +409,7 @@ async function main() {
         }
         spinner.stop();
         if (agentName === 'System') {
-          console.log(renderSystemMessage(text));
+          console.log(text.startsWith('✎ Edited') ? renderEdit(text) : renderSystemMessage(text));
           console.log('');
           return;
         }

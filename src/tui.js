@@ -166,7 +166,7 @@ export function agentResponseLines(agentName, model, content, usage = null, name
   if (model) header += COLORS.dim(` ${model}`);
   if (usage && (usage.promptTokens || usage.completionTokens)) header += COLORS.dim(`  ${usage.promptTokens}→${usage.completionTokens} tok`);
 
-  const body = highlightHandles(formatMarkdownTerminal(stripControlTags(content)), names).split('\n');
+  const body = highlightHandles(formatMarkdownTerminal(collapseEdits(stripControlTags(content))), names).split('\n');
   const out = [header];
   for (let i = 0; i < body.length; i++) {
     const isLast = i === body.length - 1;
@@ -184,6 +184,23 @@ export function renderAgentResponse(agentName, model, content, usage = null, nam
 // ─────────────────────────────────────────────
 export function renderSystemMessage(text) {
   return COLORS.dim('  │ ') + COLORS.warning(text);
+}
+
+// A compact file-edit summary (no code): "✎ Edited <file>  +N -M".
+export function renderEdit(text) {
+  const m = text.match(/^✎ Edited (.+?)\s+\+(\d+) -(\d+)$/);
+  if (!m) return renderSystemMessage(text);
+  const [, file, add, rem] = m;
+  return '  ' + COLORS.success.bold('✎ Edited') + '\n' +
+    COLORS.dim('  └ ') + COLORS.text(file) + '  ' + COLORS.success(`+${add}`) + ' ' + COLORS.error(`-${rem}`);
+}
+
+// Collapse any <tool:write_file path="X">…code…</tool:write_file> block in shown text to "✎ Edited X".
+function collapseEdits(text) {
+  return String(text).replace(/<tool:write_file\s+([^>]*?)>[\s\S]*?<\/tool:write_file>/g, (_m, attrs) => {
+    const p = (attrs.match(/path\s*=\s*["']([^"']*)["']/) || [])[1] || 'file';
+    return `✎ Edited ${p}`;
+  });
 }
 
 // ─────────────────────────────────────────────

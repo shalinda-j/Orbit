@@ -1,7 +1,7 @@
 // Team @handle identities, mention highlighting, roster.
 // Force chalk color on so highlight assertions see ANSI (test env is not a TTY).
 process.env.FORCE_COLOR = '3';
-const { handleOf, highlightHandles, agentResponseLines, renderRoster } = await import('../src/tui.js');
+const { handleOf, highlightHandles, agentResponseLines, renderRoster, renderEdit } = await import('../src/tui.js');
 
 function assert(cond, msg) {
   if (!cond) { console.error('✗ ' + msg); process.exit(1); }
@@ -26,5 +26,11 @@ assert(!lines.join('\n').includes('[FINISHED]'), '[FINISHED] control tag is stri
 assert(lines.join('\n').includes('@coder'), 'the reply keeps the teammate @mention');
 
 assert(renderRoster([{ name: 'Planner' }, { name: 'Coder' }]).includes('@planner'), 'roster lists @handles');
+
+// file edits render as a compact stat, and code is never dumped
+const edit = renderEdit('✎ Edited src/app.js  +16 -0');
+assert(edit.includes('Edited') && edit.includes('src/app.js') && edit.includes('+16') && edit.includes('-0'), 'renderEdit shows file + stat');
+const collapsed = agentResponseLines('Coder', 'm', 'done <tool:write_file path="app.js">const x=1;\nconst y=2;</tool:write_file>', null, ['Coder']).join('\n');
+assert(collapsed.includes('✎ Edited app.js') && !collapsed.includes('const x=1'), 'write_file code is collapsed to an Edited line (no code shown)');
 
 console.log('\nTeam-UI tests passed.');

@@ -1,8 +1,24 @@
+import fs from 'fs';
+import path from 'path';
 import { getProvider } from './providers/index.js';
 import { isProviderConfigured } from './config.js';
 import { BUILTIN_TOOLS, parseToolCall } from './tools.js';
 import { callTool as callMcpTool } from './mcpclient.js';
 import { Agent } from './agent.js';
+
+// Added/removed line counts between old and new file text (LCS-based, like `git diff --stat`).
+function diffStat(oldText, newText) {
+  const a = oldText == null ? [] : oldText.split('\n');
+  const b = String(newText).split('\n');
+  const m = a.length, n = b.length;
+  if (m * n > 4_000_000) return { added: n, removed: m }; // too large to diff — approximate
+  const dp = Array.from({ length: m + 1 }, () => new Uint32Array(n + 1));
+  for (let i = m - 1; i >= 0; i--)
+    for (let j = n - 1; j >= 0; j--)
+      dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+  const lcs = dp[0][0];
+  return { added: n - lcs, removed: m - lcs };
+}
 
 export class Orchestrator {
   /**
@@ -256,8 +272,18 @@ export class Orchestrator {
       const blocked = this.toolPolicy === 'none' || (this.toolPolicy === 'read' && MUTATING.includes(toolCall.name));
 
       if (onAgentSpeak) {
+        // For a file write, show a compact "Edited <file> +N -M" stat instead of the code.
+        let edit = null;
+        if (!blocked && toolCall.name === 'write_file' && toolCall.params.path && toolCall.params.content !== undefined) {
+          try {
+            const abs = path.resolve(process.cwd(), toolCall.params.path);
+            const oldText = fs.existsSync(abs) ? fs.readFileSync(abs, 'utf8') : null;
+            const { added, removed } = diffStat(oldText, toolCall.params.content);
+            edit = `✎ Edited ${toolCall.params.path}  +${added} -${removed}`;
+          } catch { /* fall back to the generic line */ }
+        }
         const label = isMcp ? `mcp:${toolCall.params.server}/${toolCall.params.name}` : toolCall.name;
-        onAgentSpeak('System', `${agent.name} ${blocked ? 'blocked from' : 'is executing'} tool: ${label}`, false);
+        await onAgentSpeak('System', edit || `${agent.name} ${blocked ? 'blocked from' : 'is executing'} tool: ${label}`, false);
       }
 
       let output;
