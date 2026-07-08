@@ -254,13 +254,54 @@ async function main() {
     output: process.stdout,
     prompt: renderPrompt(mode),
     terminal: true,
-    // Tab-completion for slash commands (safe: readline owns the line rendering).
+    // Tab-completion for slash commands (also safe: readline owns the line rendering).
     completer: (line) => {
       if (!line.startsWith('/')) return [[], line];
       const hits = SLASH.filter(c => c.startsWith(line.toLowerCase()));
       return [hits.length ? hits : SLASH, line];
     },
   });
+
+  // ── Live slash-command suggestions ──
+  // As you type "/…", show matching commands on the line below the prompt. Uses readline's
+  // RELATIVE cursor ops (scroll-safe, unlike \x1b7/8) + getCursorPos to restore the column.
+  const O = process.stdout;
+  let suggestShown = false;
+  const clearSuggestBelow = () => {
+    if (!suggestShown || !O.isTTY) { suggestShown = false; return; }
+    try { readline.moveCursor(O, 0, 1); readline.clearLine(O, 0); readline.moveCursor(O, 0, -1); } catch { /* ignore */ }
+    suggestShown = false;
+  };
+  const renderSuggest = () => {
+    if (!O.isTTY || isProcessing || wizardActive) return;
+    let pos;
+    try { pos = rl.getCursorPos(); } catch { return; }
+    if (pos.rows !== 0) { clearSuggestBelow(); return; } // input wrapped — skip to stay safe
+    clearSuggestBelow();
+    const line = rl.line || '';
+    if (!line.startsWith('/') || line.includes(' ')) return;
+    const hits = SLASH.filter(c => c.startsWith(line.toLowerCase()));
+    if (!hits.length) return;
+    const width = (O.columns || 80) - 4;
+    let text = '', n = 0;
+    for (const h of hits) { if (text.length + h.length + 2 > width) break; text += (text ? '  ' : '') + h; n++; }
+    if (n < hits.length) text += `  +${hits.length - n}`;
+    try {
+      O.write('\n');
+      readline.cursorTo(O, 0);
+      readline.clearLine(O, 0);
+      O.write(COLORS.dim('  ' + text));
+      readline.moveCursor(O, 0, -1);   // relative: back up to the input row (survives scroll)
+      readline.cursorTo(O, pos.cols);  // restore the column
+      suggestShown = true;
+    } catch { suggestShown = false; }
+  };
+  if (O.isTTY) {
+    process.stdin.on('keypress', (_ch, key) => {
+      if (key && (key.name === 'return' || key.name === 'enter')) return; // handled on 'line'
+      renderSuggest();
+    });
+  }
 
   const providerStatuses = providerNames.map(name => ({
     name,
@@ -288,6 +329,8 @@ async function main() {
 
   // ── Input Handler ──
   rl.on('line', async (input) => {
+    // On Enter the cursor sits on the suggestion row — clear it before any output prints.
+    if (suggestShown && O.isTTY) { try { readline.clearLine(O, 0); readline.cursorTo(O, 0); } catch { /* ignore */ } suggestShown = false; }
     // While the /connect wizard is running, route the line to it (or buffer it if a question isn't posted yet).
     if (wizardActive) {
       if (wizardResolve) { const r = wizardResolve; wizardResolve = null; r(input); }

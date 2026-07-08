@@ -4,7 +4,7 @@
 class Orbit < Formula
   desc "Multi-agent, multi-provider AI team CLI"
   homepage "https://github.com/shalinda-j/Orbit"
-  url "https://github.com/shalinda-j/Orbit/archive/refs/tags/v1.3.1.tar.gz"
+  url "https://github.com/shalinda-j/Orbit/archive/refs/tags/v1.3.2.tar.gz"
   sha256 "REPLACE_WITH_TARBALL_SHA256"
   license "ISC"
 

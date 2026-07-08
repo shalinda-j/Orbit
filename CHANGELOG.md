@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.3.2
+
+### Added
+- **Live slash-command suggestions** are back — as you type `/…`, matching commands appear on the line below the prompt (Tab still completes). This time it uses readline's scroll-safe relative cursor ops (not absolute save/restore), so it no longer corrupts input after the screen scrolls. Fully TTY-guarded.
+
 ## v1.3.1
 
 ### Changed
