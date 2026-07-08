@@ -8,7 +8,7 @@
 Put different models on different agents and let them plan, build, review, and communicate as one team — coordinating through a shared task board, channel, and persistent brain.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-8A2BE2.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.1.2-67E8F9.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.1.3-67E8F9.svg)](CHANGELOG.md)
 [![Node](https://img.shields.io/badge/node-%3E%3D18-34D399.svg)](https://nodejs.org)
 [![Providers](https://img.shields.io/badge/providers-28-A78BFA.svg)](#providers)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](#contributing)
@@ -131,7 +131,7 @@ Like Claude Code, the TUI has modes (shown in the prompt). Cycle with `/mode`, o
 
 `/skip` toggles **permissions** (`safe` read-only ↔ `auto` may write files & run commands) · `/style` toggles collaborative ↔ sequential · `/turns N` sets max turns.
 
-**Type `/` to see matching commands** as you type (press **Tab** to complete) — every session command and domain is available.
+**Type `/` then press `Tab`** to complete commands — every session command and domain is available.
 
 ---
 

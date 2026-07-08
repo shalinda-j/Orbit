@@ -165,34 +165,13 @@ async function main() {
     output: process.stdout,
     prompt: renderPrompt(mode),
     terminal: true,
-    // Tab-completion for slash commands.
+    // Tab-completion for slash commands (safe: readline owns the line rendering).
     completer: (line) => {
       if (!line.startsWith('/')) return [[], line];
       const hits = SLASH.filter(c => c.startsWith(line.toLowerCase()));
       return [hits.length ? hits : SLASH, line];
     },
   });
-
-  // Live suggestion line: as you type `/…`, show matching commands just below the prompt.
-  let suggestShown = false;
-  const clearSuggest = () => {
-    if (!suggestShown || !process.stdout.isTTY) { suggestShown = false; return; }
-    process.stdout.write('\x1b7\n\x1b[2K\x1b8'); // save cursor · down · clear line · restore
-    suggestShown = false;
-  };
-  const renderSuggest = () => {
-    if (!process.stdout.isTTY) return;
-    const line = (rl.line || '').toLowerCase();
-    const active = line.startsWith('/') && !line.includes(' ');
-    process.stdout.write('\x1b7\n\x1b[2K'); // save · down · clear
-    if (active) {
-      const hits = SLASH.filter(c => c.startsWith(line)).slice(0, 16);
-      if (hits.length) process.stdout.write('  ' + COLORS.dim(hits.join('  ')));
-    }
-    process.stdout.write('\x1b8'); // restore cursor
-    suggestShown = active;
-  };
-  if (process.stdout.isTTY) process.stdin.on('keypress', () => renderSuggest());
 
   const providerStatuses = providerNames.map(name => ({
     name,
@@ -220,7 +199,6 @@ async function main() {
 
   // ── Input Handler ──
   rl.on('line', async (input) => {
-    clearSuggest();
     const trimmed = input.trim();
 
     if (!trimmed) {

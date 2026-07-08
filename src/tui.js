@@ -195,7 +195,7 @@ export function renderPrompt(mode = 'build') {
 // Status Bar (bottom hints)
 // ─────────────────────────────────────────────
 export function renderStatusBar() {
-  return COLORS.dim('  type / for commands (Tab to complete)') + COLORS.dim(' · ') +
+  return COLORS.dim('  type /<Tab> for commands') + COLORS.dim(' · ') +
     COLORS.dim('/mode') + COLORS.dim(' · ') + COLORS.dim('/lazy') + COLORS.dim(' · ') +
     COLORS.dim('/help') + COLORS.dim(' · ') + COLORS.dim('/exit');
 }

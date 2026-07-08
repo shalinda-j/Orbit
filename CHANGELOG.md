@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.3
+
+### Fixed
+- **Input corruption after the first task** — typing the next message garbled characters (jumping down), and backspace/Enter misbehaved. Cause: the live slash-suggestion writer drew escape sequences below the prompt on every keystroke, desyncing the cursor once the screen had scrolled. Removed it; **Tab-completion** for commands remains (type `/` then `Tab`).
+
 ## v1.1.2
 
 ### Added
