@@ -135,29 +135,46 @@ function stripControlTags(text) {
   return String(text).replace(/\s*\[FINISHED\]\s*/g, ' ').trim();
 }
 
-export function renderAgentResponse(agentName, model, content, usage = null) {
+// An agent's @handle — its team identity (e.g. "SqlArchitect" → @sqlarchitect).
+export function handleOf(name) {
+  const h = String(name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  return '@' + (h || 'agent');
+}
+
+// Color any @handle in the text that belongs to a teammate — shows who's talking to whom.
+export function highlightHandles(text, names = []) {
+  if (!names.length) return text;
+  const map = new Map(names.map(n => [handleOf(n).slice(1), n]));
+  return text.replace(/@([a-z0-9][a-z0-9-]*)/gi, (m, h) => {
+    const n = map.get(h.toLowerCase());
+    return n ? getAgentColor(n).bold(m) : m;
+  });
+}
+
+// A compact team roster line: ⬡ Team  @planner · @coder · @reviewer
+export function renderRoster(agents) {
+  const parts = agents.map(a => getAgentColor(a.name).bold(handleOf(a.name)));
+  return COLORS.dim('  ⬡ ') + COLORS.muted('Team  ') + parts.join(COLORS.dim(' · '));
+}
+
+// Build the printable lines for one agent turn (header + tree-bordered body).
+export function agentResponseLines(agentName, model, content, usage = null, names = []) {
   const color = getAgentColor(agentName);
-  content = stripControlTags(content);
-  const lines = [];
+  let header = '  ' + color.bold(handleOf(agentName));
+  if (model) header += COLORS.dim(` ${model}`);
+  if (usage && (usage.promptTokens || usage.completionTokens)) header += COLORS.dim(`  ${usage.promptTokens}→${usage.completionTokens} tok`);
 
-  // Agent header line
-  let header = '  ' + color.bold(agentName);
-  if (model) header += COLORS.dim(` (${model})`);
-  if (usage && (usage.promptTokens || usage.completionTokens)) {
-    header += COLORS.dim(`  ${usage.promptTokens}→${usage.completionTokens} tokens`);
+  const body = highlightHandles(formatMarkdownTerminal(stripControlTags(content)), names).split('\n');
+  const out = [header];
+  for (let i = 0; i < body.length; i++) {
+    const isLast = i === body.length - 1;
+    out.push((isLast ? COLORS.dim('  └ ') : COLORS.dim('  │ ')) + body[i]);
   }
-  lines.push(header);
+  return out;
+}
 
-  // Content with tree-style left border
-  const formatted = formatMarkdownTerminal(content);
-  const contentLines = formatted.split('\n');
-  for (let i = 0; i < contentLines.length; i++) {
-    const isLast = i === contentLines.length - 1;
-    const prefix = isLast ? COLORS.dim('  └ ') : COLORS.dim('  │ ');
-    lines.push(prefix + contentLines[i]);
-  }
-
-  return lines.join('\n');
+export function renderAgentResponse(agentName, model, content, usage = null, names = []) {
+  return agentResponseLines(agentName, model, content, usage, names).join('\n');
 }
 
 // ─────────────────────────────────────────────
@@ -228,6 +245,7 @@ export function renderHelp() {
     row('/skip', 'Toggle permissions: safe ↔ auto'),
     row('/style', 'Toggle collaborative ↔ sequential'),
     row('/lazy', 'Toggle lazy mode — fewest agents, terse, fewer tokens'),
+    row('/anim', 'Toggle team conversation animation'),
     row('/tokens N', 'Cap output tokens per turn'),
     row('/turns N', 'Set max collaboration turns'),
     row('/model [name]', 'View or set the NVIDIA model'),

@@ -102,7 +102,7 @@ export class Orchestrator {
         currentInput = response.content;
         history.push({ agent: agent.name, content: currentInput });
 
-        if (onAgentSpeak) onAgentSpeak(agent.name, currentInput, false, response.usage);
+        if (onAgentSpeak) await onAgentSpeak(agent.name, currentInput, false, response.usage);
       } catch (error) {
         if (onAgentSpeak) onAgentSpeak(agent.name, `Error: ${error.message}`, false);
         throw error;
@@ -203,12 +203,13 @@ export class Orchestrator {
       relevantHistory = discussionHistory.slice(-maxWindow);
     }
 
-    // Add relevant discussion history
+    // Add relevant discussion history. Prefix others by @handle so agents naturally address teammates as @name.
+    const handle = (n) => '@' + String(n).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
     relevantHistory.forEach(entry => {
       if (entry.agent === agent.name) {
         messages.push({ role: 'assistant', content: entry.content });
       } else {
-        messages.push({ role: 'user', content: `[${entry.agent} (${entry.role})]: ${entry.content}` });
+        messages.push({ role: 'user', content: `${handle(entry.agent)} (${entry.role}): ${entry.content}` });
       }
     });
 
@@ -221,7 +222,7 @@ export class Orchestrator {
         content: response.content
       });
 
-      if (onAgentSpeak) onAgentSpeak(agent.name, response.content, false, response.usage);
+      if (onAgentSpeak) await onAgentSpeak(agent.name, response.content, false, response.usage);
       return { content: response.content, usage: response.usage };
     } catch (error) {
       if (onAgentSpeak) onAgentSpeak(agent.name, `Error: ${error.message}`, false);

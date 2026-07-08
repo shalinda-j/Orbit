@@ -57,6 +57,7 @@ for (const [name, p] of Object.entries(PRESETS)) {
 // ── Token / laziness controls (mutable: the TUI /lazy and /tokens toggles change these live) ──
 config.limits = { maxTokens: parseInt(process.env.ORBIT_MAX_TOKENS, 10) || 4096 };
 config.lazy = process.env.ORBIT_LAZY === '1' || process.env.ORBIT_LAZY === 'true';
+config.animate = process.env.ORBIT_ANIM !== '0'; // animate the team conversation (TUI only)
 
 // Effective output-token cap for a call. Lazy "lazy" mode tightens it hard to slash token spend.
 export function maxTokens() {

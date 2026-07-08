@@ -85,8 +85,8 @@ const gammaSaw = JSON.stringify(seen.gamma[0].messages);
 assert(betaSaw.includes('PLAN'), 'Coder (provider B) received Planner’s output (provider A)');
 assert(gammaSaw.includes('PLAN') && gammaSaw.includes('CODE'), 'Reviewer (provider C) received both prior agents’ work');
 
-// 3. Agents argue/communicate with identity: other agents’ messages are attributed by name.
-assert(gammaSaw.includes('[Planner') && gammaSaw.includes('[Coder'), 'messages are attributed by agent name');
+// 3. Agents argue/communicate with identity: other agents’ messages are attributed by @handle.
+assert(gammaSaw.includes('@planner') && gammaSaw.includes('@coder'), 'messages are attributed by @handle');
 
 // 4. Tool use mid-run worked (beta called list_dir and got output back).
 assert(betaCalls === 2 && betaSaw.includes('[Tool Output]'), 'agent used a workspace tool mid-run and saw the result');

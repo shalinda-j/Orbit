@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.1.2
+
+### Added
+- **Animated team conversation** — each agent now speaks with an `@handle` identity (e.g. `@designer`, `@boss`, `@qa`), the team roster shows as `⬡ Team @planner · @coder · @reviewer`, and turns reveal line-by-line as the team works.
+- **@mention highlighting** — agents address teammates by `@handle`, and those mentions are colorized so you can see who's arguing with whom.
+- **`/anim`** toggles the animation (auto-off in lazy mode or when output isn't a terminal).
+
 ## v1.1.1
 
 ### Added

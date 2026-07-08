@@ -17,8 +17,10 @@ import {
   renderBanner, renderAgentResponse, renderSystemMessage,
   renderPrompt, renderStatusBar, renderHelp, renderAgentList,
   renderTokenSummary, renderFinalResult, renderTaskHeader,
-  Spinner,
+  handleOf, agentResponseLines, renderRoster, Spinner,
 } from '../src/tui.js';
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // Preferred provider order — Claude Code subscription first, then keyed APIs, then local.
 const preferred = (active) =>
@@ -154,7 +156,7 @@ async function main() {
   await emit('session.start', { cwd: process.cwd() });
 
   // Every slash command (session commands + every domain + aliases) for autocomplete.
-  const SESSION_CMDS = ['/help', '/model', '/mode', '/chat', '/plan', '/build', '/skip', '/style', '/lazy', '/tokens', '/turns', '/clear', '/exit'];
+  const SESSION_CMDS = ['/help', '/model', '/mode', '/chat', '/plan', '/build', '/skip', '/style', '/lazy', '/anim', '/tokens', '/turns', '/clear', '/exit'];
   const ALIASES = ['/board', '/team', '/brain', '/channel'];
   const SLASH = [...new Set([...SESSION_CMDS, ...ALIASES, ...Object.keys(await loadDomains()).map(n => '/' + n)])].sort();
 
@@ -296,12 +298,15 @@ async function main() {
         const isLast = i === teamConfigs.length - 1;
         const branch = isLast ? '  └ ' : '  ├ ';
         const cont   = isLast ? '    ' : '  │ ';
-        console.log(COLORS.dim(branch) + color.bold(c.name) + COLORS.dim(` · ${c.role}`));
+        console.log(COLORS.dim(branch) + color.bold(handleOf(c.name)) + COLORS.dim(` · ${c.role}`));
         console.log(COLORS.dim(cont) + COLORS.muted(`  ${c.provider}`) + COLORS.dim(' / ') + COLORS.text(c.model || 'default'));
       });
       console.log('');
+      console.log(renderRoster(teamConfigs));
+      console.log('');
 
       const agents = teamConfigs.map(cfg => new Agent(cfg));
+      const teamNames = agents.map(a => a.name);
       const toolPolicy = toolPolicyFor(mode, permissions);
 
       // Bridge any configured MCP servers' tools into the agent tool-loop.
@@ -310,20 +315,27 @@ async function main() {
 
       const orchestrator = new Orchestrator({ agents, supervisorProvider, toolPolicy, mcpTools });
 
-      const onAgentSpeak = (agentName, text, isThinking, usage) => {
+      const animate = () => config.animate && process.stdout.isTTY && !config.lazy;
+      const onAgentSpeak = async (agentName, text, isThinking, usage) => {
         if (aborted()) { spinner.stop(); return; } // Ctrl+C — suppress the orphaned run's output
         if (isThinking) {
-          spinner.start(`${agentName} is thinking`);
-        } else {
-          spinner.stop();
-          if (agentName === 'System') {
-            console.log(renderSystemMessage(text));
-          } else {
-            const agent = agents.find(a => a.name === agentName);
-            console.log(renderAgentResponse(agentName, agent?.model || '', text, usage));
-          }
-          console.log('');
+          spinner.start(agentName === 'System' ? text : `${handleOf(agentName)} is thinking`);
+          return;
         }
+        spinner.stop();
+        if (agentName === 'System') {
+          console.log(renderSystemMessage(text));
+          console.log('');
+          return;
+        }
+        // Animate the team member's turn: reveal line by line, @handles highlighted.
+        const agent = agents.find(a => a.name === agentName);
+        const lines = agentResponseLines(agentName, agent?.model || '', text, usage, teamNames);
+        for (let i = 0; i < lines.length; i++) {
+          console.log(lines[i]);
+          if (animate() && i > 0 && i < 40) await sleep(12); // fast reveal, capped for long messages
+        }
+        console.log('');
       };
 
       // In plan mode, steer the team to a plan and away from mutations.
@@ -479,6 +491,14 @@ async function handleSlashCommand(input, rl, agents, providerStatuses) {
       console.log('');
       console.log(COLORS.dim('  └ ') + COLORS.muted('Style → ') + COLORS.bright(style) +
         COLORS.dim(style === 'sequential' ? '  (Planner → … chain)' : '  (coordinator-routed discussion)'));
+      console.log('');
+      break;
+
+    case '/anim':
+      config.animate = !config.animate;
+      console.log('');
+      console.log(COLORS.dim('  └ ') + COLORS.muted('Team conversation animation → ') +
+        (config.animate ? COLORS.success('on') : COLORS.bright('off')));
       console.log('');
       break;
 
