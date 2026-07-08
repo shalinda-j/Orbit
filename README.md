@@ -8,7 +8,7 @@
 Put different models on different agents and let them plan, build, review, and communicate as one team — coordinating through a shared task board, channel, and persistent brain.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-8A2BE2.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.2.0-67E8F9.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.3.0-67E8F9.svg)](CHANGELOG.md)
 [![Node](https://img.shields.io/badge/node-%3E%3D18-34D399.svg)](https://nodejs.org)
 [![Providers](https://img.shields.io/badge/providers-28-A78BFA.svg)](#providers)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](#contributing)
@@ -132,6 +132,13 @@ Like Claude Code, the TUI has modes (shown in the prompt). Cycle with `/mode`, o
 | **build** | Full multi-agent build. |
 
 `/skip` toggles **permissions** (`safe` read-only ↔ `auto` may write files & run commands) · `/style` toggles collaborative ↔ sequential · `/turns N` sets max turns.
+
+**More controls:** `/effort low|medium|high|max` sets how hard the team works (deeper = more turns + more deliberation) · `/use groq,deepseek` restricts a run to specific providers (multi-model select; blank clears) · `/disconnect <provider>` removes a key. A live **timer** shows how long each agent has been thinking and how long the whole task took.
+
+### Sub-agents & memory
+
+- **Sub-agents** — any agent can delegate a subtask to a fresh sub-agent mid-run (`<tool:subagent role="…">subtask</tool:subagent>`), splitting big work into pieces to move faster.
+- **Memory & self-improvement** — every run is saved to the brain (`.orbit/brain/`, category `runs`). Before a new run, Orbit recalls relevant past work and feeds it to the team, so it reuses prior solutions and improves over time.
 
 **Type `/` then press `Tab`** to complete commands — every session command and domain is available.
 

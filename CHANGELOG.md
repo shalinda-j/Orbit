@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.3.0
+
+### Added
+- **Effort levels** — `/effort low|medium|high|max` (or `ORBIT_EFFORT`): scales turns (2/4/6/10) and injects a deliberation directive so the team works as hard as you want.
+- **Multi-provider select** — `/use groq,deepseek,kimi` restricts a run to specific providers/models (blank = all). Shown in the banner.
+- **Provider disconnect** — `/disconnect <provider>` (and `orbit connect remove <provider>`) removes a key from `~/.orbit/.env` and live config.
+- **Sub-agents** — any agent can delegate a subtask to a fresh sub-agent mid-run via `<tool:subagent role="…">subtask</tool:subagent>`, splitting work to move faster.
+- **Live timers** — the spinner shows real-time elapsed seconds per agent, and each task prints its total time (`⏱ Ns`).
+- **Memory & self-improvement** — every run is saved to the brain (category `runs`); before a new run, Orbit recalls relevant past work and feeds it to the team, reusing prior solutions and improving over time.
+
 ## v1.2.0
 
 ### Added

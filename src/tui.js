@@ -88,7 +88,7 @@ export function modeColor(mode) {
 // Banner (flat, no boxes)
 // ─────────────────────────────────────────────
 export function renderBanner(providerStatuses, cwd, state = {}) {
-  const { mode = 'build', permissions = 'safe', style = 'collaborative', turns = 6, lazy = false } = state;
+  const { mode = 'build', permissions = 'safe', style = 'collaborative', turns = 6, lazy = false, effort = 'medium', use = [] } = state;
   const cols = process.stdout.columns || 80;
   const wm = getWordmark();   // 34 visible cols
   const lines = [''];
@@ -119,10 +119,12 @@ export function renderBanner(providerStatuses, cwd, state = {}) {
     COLORS.muted('Mode ') + mc.bold(mode) +
     COLORS.dim(' · ') + COLORS.muted('Perms ') + (permissions === 'auto' ? COLORS.warning('auto') : COLORS.text('safe')) +
     COLORS.dim(' · ') + COLORS.muted('Style ') + COLORS.text(style) +
+    COLORS.dim(' · ') + COLORS.muted('Effort ') + COLORS.text(effort) +
     COLORS.dim(' · ') + COLORS.muted('Turns ') + COLORS.text(String(turns)) +
     (lazy ? COLORS.dim(' · ') + COLORS.success('⚡ lazy') : '')
   );
-  lines.push(COLORS.dim('  └ ') + COLORS.muted('Team ') + COLORS.bright('Dynamic (generated per task)'));
+  const teamText = use.length ? COLORS.text('using ') + use.map(n => COLORS.text(n)).join(COLORS.dim(', ')) : COLORS.bright('Dynamic (generated per task)');
+  lines.push(COLORS.dim('  └ ') + COLORS.muted('Team ') + teamText);
 
   return lines.join('\n');
 }
@@ -241,6 +243,9 @@ export function renderHelp() {
     COLORS.dim('  │'),
     row('/help', 'Show this help'),
     row('/connect', 'Add a provider (interactive setup wizard)'),
+    row('/disconnect X', 'Remove a provider'),
+    row('/use a,b', 'Restrict the team to these providers (blank = all)'),
+    row('/effort L', 'Set effort: low | medium | high | max'),
     row('/mode', 'Cycle mode: chat → plan → build'),
     row('/chat /plan /build', 'Set mode directly'),
     row('/skip', 'Toggle permissions: safe ↔ auto'),
@@ -312,10 +317,12 @@ export class Spinner {
   start(text = 'Thinking') {
     this.text = text;
     this.frameIndex = 0;
+    this.startTime = Date.now();
     this.interval = setInterval(() => {
       clearLine();
       const frame = SPINNER_FRAMES[this.frameIndex % SPINNER_FRAMES.length];
-      process.stdout.write(COLORS.primary(`  ${frame} `) + COLORS.muted(this.text));
+      const secs = Math.floor((Date.now() - this.startTime) / 1000); // real-time elapsed
+      process.stdout.write(COLORS.primary(`  ${frame} `) + COLORS.muted(this.text) + COLORS.dim(`  ${secs}s`));
       this.frameIndex++;
     }, 80);
   }

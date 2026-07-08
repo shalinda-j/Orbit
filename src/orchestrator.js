@@ -2,6 +2,7 @@ import { getProvider } from './providers/index.js';
 import { isProviderConfigured } from './config.js';
 import { BUILTIN_TOOLS, parseToolCall } from './tools.js';
 import { callTool as callMcpTool } from './mcpclient.js';
+import { Agent } from './agent.js';
 
 export class Orchestrator {
   /**
@@ -262,6 +263,23 @@ export class Orchestrator {
       let output;
       if (blocked) {
         output = `[blocked: "${toolCall.name}" is disabled in this mode (read-only). Describe the change in your reply instead of applying it.]`;
+      } else if (toolCall.name === 'subagent') {
+        // Delegate a subtask to a fresh sub-agent (same provider) and return its result.
+        const subRole = toolCall.params.role || 'Assistant';
+        const subTask = toolCall.params.content || toolCall.params.task || '';
+        if (!subTask) { output = '[subagent needs a task in the tag body]'; }
+        else {
+          try {
+            const sub = new Agent({
+              name: `sub-${subRole}`, role: subRole,
+              instructions: 'You are a focused sub-agent spawned to handle one subtask. Complete it concisely and return only the result.',
+              provider: agent.providerName, model: agent.model,
+            });
+            const subRes = await sub.respond([{ role: 'user', content: subTask }]);
+            this.recordTokens(`${agent.name}/sub`, subRes.usage);
+            output = subRes.content;
+          } catch (e) { output = `Sub-agent error: ${e.message}`; }
+        }
       } else if (isMcp) {
         // Bridged MCP call — body of the tag is the JSON arguments.
         try {

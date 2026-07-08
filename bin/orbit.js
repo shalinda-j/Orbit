@@ -4,7 +4,8 @@ import readline from 'readline';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { config, isProviderConfigured, PROVIDER_NAMES, providerEnv, applyProviderConfig, setGlobalEnv } from '../src/config.js';
+import { config, isProviderConfigured, PROVIDER_NAMES, providerEnv, applyProviderConfig, setGlobalEnv, removeGlobalEnv, clearProviderConfig, EFFORT_TURNS } from '../src/config.js';
+import { brainSave, brainSearch } from '../src/brain.js';
 import { Agent } from '../src/agent.js';
 import { Orchestrator } from '../src/orchestrator.js';
 import { generateAgentTeam } from '../src/genesis.js';
@@ -21,6 +22,22 @@ import {
 } from '../src/tui.js';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Self-improvement: pull relevant past runs from the brain into a new task's context.
+function recallMemory(goal) {
+  try {
+    const q = goal.split(/\s+/).slice(0, 6).join(' ');
+    const hits = brainSearch({ query: q, category: 'runs' }).slice(0, 3);
+    if (!hits.length) return '';
+    return '\n\n[Relevant past work from memory — reuse what applies]:\n' +
+      hits.map(h => `• ${h.title}: ${h.body.slice(0, 400)}`).join('\n');
+  } catch { return ''; }
+}
+
+// Save a completed run to the brain so future runs can learn from it.
+function rememberRun(goal, output) {
+  try { brainSave({ title: goal.slice(0, 60), content: `Task: ${goal}\n\n${output || ''}`, category: 'runs', tags: 'run' }); } catch { /* best effort */ }
+}
 
 // Preferred provider order — Claude Code subscription first, then keyed APIs, then local.
 const preferred = (active) =>
@@ -228,7 +245,7 @@ async function main() {
   await emit('session.start', { cwd: process.cwd() });
 
   // Every slash command (session commands + every domain + aliases) for autocomplete.
-  const SESSION_CMDS = ['/help', '/connect', '/model', '/mode', '/chat', '/plan', '/build', '/skip', '/style', '/lazy', '/anim', '/tokens', '/turns', '/clear', '/exit'];
+  const SESSION_CMDS = ['/help', '/connect', '/disconnect', '/use', '/effort', '/model', '/mode', '/chat', '/plan', '/build', '/skip', '/style', '/lazy', '/anim', '/tokens', '/turns', '/clear', '/exit'];
   const ALIASES = ['/board', '/team', '/brain', '/channel'];
   const SLASH = [...new Set([...SESSION_CMDS, ...ALIASES, ...Object.keys(await loadDomains()).map(n => '/' + n)])].sort();
 
@@ -249,7 +266,7 @@ async function main() {
     name,
     configured: activeProviders.includes(name)
   }));
-  const bannerState = () => ({ mode, permissions, style, turns: maxTurns, lazy: config.lazy });
+  const bannerState = () => ({ mode, permissions, style, turns: maxTurns, lazy: config.lazy, effort: config.effort, use: config.useProviders });
 
   // ── Welcome Screen ──
   clearScreen();
@@ -310,13 +327,22 @@ async function main() {
       return;
     }
 
+    // Multi-model select: restrict this run to the pinned providers (if any) that are actually configured.
+    const runProviders = config.useProviders.length ? activeProviders.filter(p => config.useProviders.includes(p)) : activeProviders;
+    if (!runProviders.length) {
+      console.log(renderSystemMessage('None of the selected providers (/use) are configured. Run /use to clear the selection.'));
+      rl.prompt();
+      return;
+    }
+
     isProcessing = true;
     taskCount++;
     const myGen = ++taskGen;               // this task's identity; Ctrl+C bumps taskGen to abort it
     const aborted = () => myGen !== taskGen;
+    const t0 = Date.now();
     const spinner = new Spinner();
     activeSpinner = spinner;
-    const supervisorProvider = preferred(activeProviders);
+    const supervisorProvider = preferred(runProviders);
     const subscription = supervisorProvider === 'claude-code';
     if (subscription) usedSubscription = true;
 
@@ -347,7 +373,7 @@ async function main() {
 
       // ── Plan / Build: assemble a team ──
       spinner.start('Designing custom agent team for your task');
-      const teamConfigs = await generateAgentTeam({ task: trimmed, activeProviders, onStatus: (m) => spinner.update(m) });
+      const teamConfigs = await generateAgentTeam({ task: trimmed, activeProviders: runProviders, onStatus: (m) => spinner.update(m) });
       spinner.stop();
 
       console.log(COLORS.bright.bold('  Assembled Agent Team') + COLORS.dim(`   (${mode} mode)`));
@@ -397,10 +423,12 @@ async function main() {
         console.log('');
       };
 
-      // In plan mode, steer the team to a plan and away from mutations.
-      const runTask = mode === 'plan'
+      // Recall relevant past work from the brain (self-improvement — reuse prior solutions).
+      const memory = recallMemory(trimmed);
+      const base = mode === 'plan'
         ? `Produce a detailed implementation PLAN for the following. Do NOT write files or run commands — output the plan/design only.\n\n${trimmed}`
         : trimmed;
+      const runTask = base + memory;
 
       const result = style === 'sequential'
         ? await orchestrator.runSequential(runTask, onAgentSpeak)
@@ -411,8 +439,10 @@ async function main() {
       if (!aborted()) {
         console.log(renderFinalResult(result.finalOutput));
         console.log(renderTokenSummary(result.tokenStats, { subscription }));
+        console.log(COLORS.dim(`  ⏱  ${Math.round((Date.now() - t0) / 1000)}s`));
       }
       accumulateTokens(result.tokenStats);
+      rememberRun(trimmed, result.finalOutput); // save every run to the brain
       await emit('run.after', { task: trimmed, mode });
 
     } catch (err) {
@@ -526,6 +556,65 @@ async function handleSlashCommand(input, rl, agents, providerStatuses) {
       }
       break;
 
+    case '/effort': {
+      const lvl = (parts[1] || '').toLowerCase();
+      if (EFFORT_TURNS[lvl]) {
+        config.effort = lvl;
+        maxTurns = EFFORT_TURNS[lvl];
+        console.log('');
+        console.log(COLORS.dim('  └ ') + COLORS.muted('Effort → ') + COLORS.bright(lvl) + COLORS.dim(`  (${maxTurns} turns)`));
+        console.log('');
+      } else {
+        console.log('');
+        console.log(COLORS.dim('  └ ') + COLORS.muted(`Usage: /effort <low|medium|high|max> · Current: ${config.effort}`));
+        console.log('');
+      }
+      break;
+    }
+
+    case '/use': {
+      const arg = parts.slice(1).join(' ').trim().toLowerCase();
+      if (!arg || arg === 'all' || arg === 'clear') {
+        config.useProviders = [];
+        console.log('');
+        console.log(COLORS.dim('  └ ') + COLORS.muted('Provider selection cleared — team uses all configured (auto).'));
+        console.log('');
+      } else {
+        const wanted = arg.split(/[\s,]+/).filter(Boolean);
+        const valid = wanted.filter(n => providerStatuses.some(p => p.name === n && p.configured));
+        const bad = wanted.filter(n => !valid.includes(n));
+        config.useProviders = valid;
+        console.log('');
+        console.log(COLORS.dim('  └ ') + COLORS.muted('Using: ') + COLORS.bright(valid.join(', ') || '(none configured)') +
+          (bad.length ? COLORS.dim(`  · skipped (not connected): ${bad.join(', ')}`) : ''));
+        console.log('');
+      }
+      break;
+    }
+
+    case '/disconnect': {
+      const arg = (parts[1] || '').toLowerCase();
+      const target = arg && providerStatuses.find(p => p.name === arg);
+      if (!target) {
+        const on = providerStatuses.filter(p => p.configured).map(p => p.name);
+        console.log('');
+        console.log(COLORS.muted('  Connected: ') + (on.join(', ') || 'none'));
+        console.log(COLORS.dim('  Usage: /disconnect <provider>'));
+        console.log('');
+        break;
+      }
+      const env = providerEnv(target.name);
+      if (env) { removeGlobalEnv(env.keyEnv); if (env.baseUrlEnv) removeGlobalEnv(env.baseUrlEnv); }
+      clearProviderConfig(target.name);
+      target.configured = isProviderConfigured(target.name); // re-check (claude-code/ollama stay on)
+      config.useProviders = config.useProviders.filter(n => n !== target.name);
+      console.log('');
+      if (target.configured) console.log(COLORS.dim('  └ ') + COLORS.muted(`${target.name} can't be disconnected here (it's not key-based).`));
+      else console.log(COLORS.dim('  └ ') + COLORS.success(`✓ ${target.name} disconnected`) + COLORS.dim('  (removed from ~/.orbit/.env)'));
+      console.log('');
+      break;
+    }
+
     case '/mode':
       mode = MODES[(MODES.indexOf(mode) + 1) % MODES.length];
       rl.setPrompt(renderPrompt(mode));
@@ -608,7 +697,7 @@ async function handleSlashCommand(input, rl, agents, providerStatuses) {
     case '/clear':
       clearScreen();
       console.log('');
-      console.log(renderBanner(providerStatuses, process.cwd(), { mode, permissions, style, turns: maxTurns, lazy: config.lazy }));
+      console.log(renderBanner(providerStatuses, process.cwd(), { mode, permissions, style, turns: maxTurns, lazy: config.lazy, effort: config.effort, use: config.useProviders }));
       console.log('');
       console.log(renderStatusBar());
       console.log('');

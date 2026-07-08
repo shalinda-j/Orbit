@@ -63,6 +63,11 @@ config.limits = { maxTokens: parseInt(process.env.ORBIT_MAX_TOKENS, 10) || 4096 
 config.lazy = process.env.ORBIT_LAZY === '1' || process.env.ORBIT_LAZY === 'true';
 config.animate = process.env.ORBIT_ANIM !== '0'; // animate the team conversation (TUI only)
 
+// Reasoning effort: how hard the team works (deeper = more turns + more deliberation).
+export const EFFORT_TURNS = { low: 2, medium: 4, high: 6, max: 10 };
+config.effort = EFFORT_TURNS[process.env.ORBIT_EFFORT] ? process.env.ORBIT_EFFORT : 'medium';
+config.useProviders = []; // when non-empty, restrict runs to this subset of providers (multi-model select)
+
 // Effective output-token cap for a call. Lazy "lazy" mode tightens it hard to slash token spend.
 export function maxTokens() {
   return config.lazy ? Math.min(config.limits.maxTokens, 1024) : config.limits.maxTokens;
@@ -139,4 +144,22 @@ export function setGlobalEnv(key, value) {
   const content = fs.existsSync(f) ? fs.readFileSync(f, 'utf8') : '';
   fs.writeFileSync(f, upsertEnvLine(content, key, value), 'utf8');
   process.env[key] = value;
+}
+
+// Remove an env var from the global ~/.orbit/.env and unset it live.
+export function removeGlobalEnv(key) {
+  const f = globalEnvFile();
+  if (fs.existsSync(f)) {
+    const kept = fs.readFileSync(f, 'utf8').split(/\r?\n/).filter(l => !l.startsWith(key + '=')).join('\n');
+    fs.writeFileSync(f, kept, 'utf8');
+  }
+  delete process.env[key];
+}
+
+// Disconnect a provider: clear its live config so it stops being "configured" this session.
+export function clearProviderConfig(name) {
+  const p = config.providers[name];
+  if (!p) return;
+  p.apiKey = '';
+  if (name === 'custom') p.baseUrl = '';
 }

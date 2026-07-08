@@ -1,4 +1,4 @@
-import { config, isProviderConfigured, PROVIDER_NAMES, providerEnv, applyProviderConfig, setGlobalEnv } from '../config.js';
+import { config, isProviderConfigured, PROVIDER_NAMES, providerEnv, applyProviderConfig, setGlobalEnv, removeGlobalEnv, clearProviderConfig } from '../config.js';
 import { PRESETS } from '../providers/presets.js';
 import { addToProjectConfig } from '../orbitconfig.js';
 import { extProviderNames } from '../extensions.js';
@@ -57,6 +57,17 @@ export default {
         if (baseUrl && env.baseUrlEnv) setGlobalEnv(env.baseUrlEnv, baseUrl);
         applyProviderConfig(name, { key, model: a.model, baseUrl });
         ctx.print(`  ✓ ${name} connected — saved to ~/.orbit/.env`);
+      },
+    },
+    remove: {
+      desc: 'Disconnect a provider: connect remove <provider>',
+      run: async (a, ctx) => {
+        const name = a._[0];
+        if (!name) throw new Error('usage: connect remove <provider>');
+        const env = providerEnv(name);
+        if (env) { removeGlobalEnv(env.keyEnv); if (env.baseUrlEnv) removeGlobalEnv(env.baseUrlEnv); }
+        clearProviderConfig(name);
+        ctx.print(`  ✓ ${name} disconnected (removed from ~/.orbit/.env)`);
       },
     },
     add: {
