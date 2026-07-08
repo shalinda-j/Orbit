@@ -6,7 +6,7 @@ const storeFile = () => path.join(orbitDir(), 'store.json');
 const backupsDir = () => path.join(orbitDir(), 'backups');
 const summariesDir = () => path.join(orbitDir(), 'summaries');
 const ensure = (d) => { fs.mkdirSync(d, { recursive: true }); return d; };
-// ponytail: file names come from --label / --name; strip path separators so nothing escapes .orbit
+// note: file names come from --label / --name; strip path separators so nothing escapes .orbit
 const safe = (s) => String(s).replace(/[^\w.\-]+/g, '-');
 
 export default {

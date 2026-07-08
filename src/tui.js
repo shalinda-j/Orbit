@@ -56,7 +56,7 @@ export function clearLine() {
   process.stdout.write('\x1B[2K\r');
 }
 
-// Big block "ORBIT" wordmark (opencode-style), gradient: deep-purple → cyan → white.
+// Big block "ORBIT" wordmark, gradient: deep-purple → cyan → white.
 function getWordmark() {
   const L = {
     O: ['██████', '██  ██', '██  ██', '██  ██', '██████'],
@@ -178,8 +178,8 @@ export function renderPrompt(mode = 'build') {
 // Status Bar (bottom hints)
 // ─────────────────────────────────────────────
 export function renderStatusBar() {
-  return COLORS.dim('  /mode cycle chat·plan·build') + COLORS.dim(' · ') +
-    COLORS.dim('/skip toggle perms') + COLORS.dim(' · ') +
+  return COLORS.dim('  type / for commands (Tab to complete)') + COLORS.dim(' · ') +
+    COLORS.dim('/mode') + COLORS.dim(' · ') + COLORS.dim('/lazy') + COLORS.dim(' · ') +
     COLORS.dim('/help') + COLORS.dim(' · ') + COLORS.dim('/exit');
 }
 
@@ -227,7 +227,7 @@ export function renderHelp() {
     row('/chat /plan /build', 'Set mode directly'),
     row('/skip', 'Toggle permissions: safe ↔ auto'),
     row('/style', 'Toggle collaborative ↔ sequential'),
-    row('/lazy', 'Toggle ponytail mode — fewest agents, terse, fewer tokens'),
+    row('/lazy', 'Toggle lazy mode — fewest agents, terse, fewer tokens'),
     row('/tokens N', 'Cap output tokens per turn'),
     row('/turns N', 'Set max collaboration turns'),
     row('/model [name]', 'View or set the NVIDIA model'),

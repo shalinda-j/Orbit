@@ -5,7 +5,7 @@ import { spawnSync } from 'child_process';
 import { PRESETS, baseUrlEnv } from './providers/presets.js';
 
 // Load environment variables from .env in current working directory
-dotenv.config({ quiet: true }); // ponytail: silence dotenv's tip banner — it pollutes CLI stdout that agents parse
+dotenv.config({ quiet: true }); // note: silence dotenv's tip banner — it pollutes CLI stdout that agents parse
 
 export const config = {
   providers: {
@@ -58,7 +58,7 @@ for (const [name, p] of Object.entries(PRESETS)) {
 config.limits = { maxTokens: parseInt(process.env.ORBIT_MAX_TOKENS, 10) || 4096 };
 config.lazy = process.env.ORBIT_LAZY === '1' || process.env.ORBIT_LAZY === 'true';
 
-// Effective output-token cap for a call. Ponytail "lazy" mode tightens it hard to slash token spend.
+// Effective output-token cap for a call. Lazy "lazy" mode tightens it hard to slash token spend.
 export function maxTokens() {
   return config.lazy ? Math.min(config.limits.maxTokens, 1024) : config.limits.maxTokens;
 }

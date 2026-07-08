@@ -20,7 +20,7 @@ export class ClaudeCodeProvider {
     // Fold system + conversation into ONE stdin blob. The command line stays
     // short, safe tokens only (no user text as args), so shell quoting can't
     // break across Windows/macOS/Linux.
-    // ponytail: persona is folded into the prompt (Claude Code's own system prompt
+    // note: persona is folded into the prompt (Claude Code's own system prompt
     // still applies); switch to `--system-prompt` if you need to fully replace it.
     const convo = messages.map(m => `${m.role === 'assistant' ? 'Assistant' : 'User'}: ${m.content}`).join('\n\n');
     const full = (systemPrompt ? `[System instructions]\n${systemPrompt}\n\n[Conversation]\n` : '') + convo + '\n\nAssistant:';

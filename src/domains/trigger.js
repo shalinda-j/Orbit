@@ -28,7 +28,7 @@ export default {
             mention: args.mention || null,
             title: args.title || null,
             by: args.by || 'system',
-            lastFiredTs: Date.now(), // ponytail: only fire on events AFTER creation, not backfill history
+            lastFiredTs: Date.now(), // note: only fire on events AFTER creation, not backfill history
           };
           store.triggers.push(rec);
           logEvent(store, 'trigger.add', rec.by, { id: rec.id, on, action });

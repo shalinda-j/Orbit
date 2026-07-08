@@ -54,7 +54,7 @@ export default {
         if (args.status) items = items.filter(f => f.status === String(args.status).toLowerCase());
         if (args.category) items = items.filter(f => f.category === args.category);
         if (!items.length) { ctx.print('no findings'); return; }
-        // ponytail: critical-first ordering by fixed severity rank, no configurable sort.
+        // note: critical-first ordering by fixed severity rank, no configurable sort.
         items = [...items].sort((a, b) => SEVERITIES.indexOf(a.severity) - SEVERITIES.indexOf(b.severity));
         for (const f of items) ctx.print(fmt(f));
       },
@@ -134,7 +134,7 @@ export default {
       desc: "'finding audit --by X'  (start_security_audit: seed SAST/secrets/deps tasks + channel post)",
       run: async (args, ctx) => {
         const by = args.by || args.role || 'security';
-        // ponytail: fixed 3-task checklist; expand the list here if the audit scope grows.
+        // note: fixed 3-task checklist; expand the list here if the audit scope grows.
         const checklist = [
           'SAST review — static analysis of source',
           'Secrets scan — keys/tokens in repo & history',

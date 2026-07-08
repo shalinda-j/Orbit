@@ -1,4 +1,4 @@
-// Token-reduction controls: max-token cap, lazy (ponytail) mode, single-agent synthesis skip.
+// Token-reduction controls: max-token cap, lazy mode, single-agent synthesis skip.
 import { config, maxTokens } from '../src/config.js';
 import { Agent } from '../src/agent.js';
 import { Orchestrator } from '../src/orchestrator.js';

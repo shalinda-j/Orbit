@@ -8,9 +8,9 @@
 Put different models on different agents and let them plan, build, review, and communicate as one team — coordinating through a shared task board, channel, and persistent brain.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-8A2BE2.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.1.0-67E8F9.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.1.1-67E8F9.svg)](CHANGELOG.md)
 [![Node](https://img.shields.io/badge/node-%3E%3D18-34D399.svg)](https://nodejs.org)
-[![Providers](https://img.shields.io/badge/providers-16-A78BFA.svg)](#providers)
+[![Providers](https://img.shields.io/badge/providers-28-A78BFA.svg)](#providers)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](#contributing)
 
 [Install](#install) · [Quick start](#quick-start) · [Providers](#providers) · [Modes](#modes) · [How it works](#how-it-works) · [Extending](#extending) · [Contributing](#contributing)
@@ -24,7 +24,7 @@ Put different models on different agents and let them plan, build, review, and c
 Most AI coding tools are a single model in a loop. Orbit is a **team**. You give it a goal; it designs a small team of specialized agents — each of which can run on a **different provider and model** (a Groq agent planning, a DeepSeek agent coding, a Kimi agent reviewing) — and coordinates them to completion. Everything is a plain `orbit <domain> <action>` command, so humans and spawned CLI agents collaborate through the same shared state.
 
 - 🤝 **Real multi-agent teamwork** — a coordinator routes turns; every agent sees the others' work, builds on it, and signals when the goal is met.
-- 🔌 **16 providers, mix-and-match** — Claude Code subscription (no API key), OpenAI, Anthropic, Gemini, NVIDIA, OpenRouter, z.ai, Kimi, Groq, DeepSeek, Together, Mistral, xAI, Fireworks, Ollama, and any custom OpenAI-compatible endpoint.
+- 🔌 **28 providers, mix-and-match** — Claude Code subscription (no API key), OpenAI, Anthropic, Gemini, NVIDIA, OpenRouter, Groq, DeepSeek, Together, Mistral, xAI, Fireworks, the major **Chinese models** (Qwen, Zhipu GLM, Kimi, MiniMax, Yi, Baichuan, Hunyuan, Doubao, StepFun, SenseNova, Spark, SiliconFlow), Ollama, and **any custom OpenAI-compatible endpoint**.
 - 🧠 **Shared state** — a task board, team channel, and a persistent, searchable **brain** (markdown notes), all on disk under `.orbit/`.
 - 🛠️ **Two kinds of agents** — Orbit's own in-process provider agents, or **spawned external coding CLIs** (claude / codex / gemini …) that join the team.
 - 🧩 **Extensible** — plugins, hooks, skills, and **MCP servers bridged right into the agent tool-loop**.
@@ -105,10 +105,17 @@ Provide **at least one**. Run `orbit connect` for the live list.
 |------|-----------|----------------|
 | **Subscription** | Claude Code | Install Claude Code & log in — **no API key**, no per-token cost. Auto-detected & preferred. |
 | **Native API** | OpenAI · Anthropic · Gemini · NVIDIA | `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `NVIDIA_API_KEY` |
-| **Presets** (OpenAI-compatible) | OpenRouter · z.ai (GLM) · Kimi · Groq · DeepSeek · Together · Mistral · xAI (Grok) · Fireworks | Just add `<NAME>_API_KEY` — base URL is baked in. Override model with `<NAME>_MODEL`. |
-| **Local / custom** | Ollama · any OpenAI-compatible endpoint | Run Ollama locally, or set `CUSTOM_BASE_URL` + `CUSTOM_API_KEY` + `CUSTOM_DEFAULT_MODEL`. |
+| **Presets** (OpenAI-compatible) | OpenRouter · Groq · DeepSeek · Together · Mistral · xAI (Grok) · Fireworks · z.ai | Just add `<NAME>_API_KEY` — base URL is baked in. Override model with `<NAME>_MODEL`. |
+| **Chinese models** | Qwen (Alibaba) · Zhipu GLM · Kimi/Moonshot · MiniMax · Yi (01.AI) · Baichuan · Hunyuan (Tencent) · Doubao (Volcengine) · StepFun · SenseNova · Spark (iFlytek) · SiliconFlow | Add the key (`DASHSCOPE_API_KEY`, `ZHIPU_API_KEY`, `MOONSHOT_API_KEY`, …). |
+| **Local / custom** | Ollama · **any** OpenAI-compatible endpoint | Run Ollama locally; set `CUSTOM_BASE_URL`+`CUSTOM_API_KEY`+`CUSTOM_DEFAULT_MODEL`; or register more with `orbit connect add`. |
 
-Because agents are assigned per-provider, **a single run can mix providers** — e.g. plan on Groq, code on DeepSeek, review on Kimi. Add your own with `orbit connect add --name myllm --base-url … --key-env MY_KEY --model …`.
+Because agents are assigned per-provider, **a single run can mix providers** — e.g. plan on Groq, code on DeepSeek, review on Qwen.
+
+**Connect any custom model** — point Orbit at any OpenAI-compatible endpoint without touching code:
+
+```bash
+orbit connect add --name mylab --base-url https://api.example.com/v1 --key-env MYLAB_KEY --model my-model-v2
+```
 
 ---
 
@@ -123,6 +130,8 @@ Like Claude Code, the TUI has modes (shown in the prompt). Cycle with `/mode`, o
 | **build** | Full multi-agent build. |
 
 `/skip` toggles **permissions** (`safe` read-only ↔ `auto` may write files & run commands) · `/style` toggles collaborative ↔ sequential · `/turns N` sets max turns.
+
+**Type `/` to see matching commands** as you type (press **Tab** to complete) — every session command and domain is available.
 
 ---
 
@@ -140,24 +149,11 @@ Like Claude Code, the TUI has modes (shown in the prompt). Cycle with `/mode`, o
 
 ---
 
-## The 4 Layers of AI Engineering
+## Token frugality
 
-Good AI systems are engineered at four nested layers, not just the prompt. Orbit is built at **all four**:
+Multi-agent runs mean many model calls — so Orbit gives you direct control over spend:
 
-<div align="center"><img src="docs/four-layers.svg" alt="The 4 layers of AI engineering" width="820"></div>
-
-| Layer | What it is | In Orbit |
-|-------|------------|----------|
-| **Prompt** | The exact wording, instructions, and constraints. | Per-agent personas + coordinator/synthesizer prompts, tuned for concision and explicit stop conditions ([`src/agent.js`](src/agent.js), [`src/genesis.js`](src/genesis.js)). |
-| **Context** | System instructions, reference files, and history the model reads first. | Windowed history pruning, the shared brain/board, and **bridged MCP tools** injected per turn ([`src/orchestrator.js`](src/orchestrator.js)). |
-| **Harness** | Code that routes tools, verifies outputs, and retries so the model checks its own work. | The tool-loop (parse → execute → feed back), `toolPolicy` guardrails, and a **Reviewer agent** that validates before `[FINISHED]` ([`src/tools.js`](src/tools.js), [`src/orchestrator.js`](src/orchestrator.js)). |
-| **Loop** | A defined goal + stop condition that let the system run, check, and adjust on its own. | The coordinator-routed multi-agent loop with `[FINISHED]` / max-turns stop conditions and final synthesis. |
-
-### Token frugality (ponytail mode)
-
-The most expensive layer is the loop — many model calls. Orbit gives you direct control:
-
-- **`/lazy`** (or `ORBIT_LAZY=1`) — **ponytail mode**: Genesis uses the fewest agents, every turn gets a hard "output the minimum" directive, and output is capped at ≤1024 tokens.
+- **`/lazy`** (or `ORBIT_LAZY=1`) — **lazy mode**: Genesis uses the fewest agents, every turn gets a hard "output the minimum" directive, and output is capped at ≤1024 tokens.
 - **`/tokens N`** (or `ORBIT_MAX_TOKENS`) — cap output tokens per model call.
 - **`chat` mode** answers in a single call (no team, no synthesis); single-agent runs **skip the synthesizer** automatically.
 

@@ -81,7 +81,7 @@ function releaseLock() {
 /**
  * Read-modify-write the store under a global lock. The mutator receives the
  * fresh store, mutates it in place (and/or returns a value), then it's saved.
- * ponytail: global store lock — fine for a handful of agents; shard per-collection if throughput ever matters.
+ * note: global store lock — fine for a handful of agents; shard per-collection if throughput ever matters.
  */
 export async function withStore(mutator) {
   await acquireLock();
@@ -102,5 +102,5 @@ export function nextId(store, kind) {
 
 export function logEvent(store, type, actor, data = {}) {
   store.events.push({ ts: Date.now(), type, actor, data });
-  if (store.events.length > 5000) store.events = store.events.slice(-5000); // ponytail: cap the activity log
+  if (store.events.length > 5000) store.events = store.events.slice(-5000); // note: cap the activity log
 }

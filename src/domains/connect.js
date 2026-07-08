@@ -49,7 +49,7 @@ export default {
         if (!name || !baseUrl) throw new Error('need --name and --base-url');
         const entry = { name, baseUrl, model: a.model || '' };
         if (a['key-env']) entry.apiKeyEnv = a['key-env'];
-        if (a.key) entry.apiKey = a.key; // ponytail: stored in .orbit/config.json — prefer --key-env for secrets
+        if (a.key) entry.apiKey = a.key; // note: stored in .orbit/config.json — prefer --key-env for secrets
         const f = addToProjectConfig('providers', entry);
         ctx.print(`  ✓ added provider "${name}" → ${f}`);
         ctx.print(`    restart orbit to use it${entry.apiKeyEnv ? ` (set ${entry.apiKeyEnv} in your env)` : ''}.`);

@@ -1,7 +1,7 @@
 import { withStore, readStore, nextId, logEvent } from '../store.js';
 
 // Parse "Backend:claude, QA:codex" -> [{ role:'Backend', cli:'claude' }, ...]
-// ponytail: cli is optional; "Backend" alone -> { role:'Backend', cli:'' }.
+// note: cli is optional; "Backend" alone -> { role:'Backend', cli:'' }.
 function parseTeam(team) {
   return String(team || '')
     .split(',')

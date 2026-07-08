@@ -103,7 +103,7 @@ export default {
           ));
           server.listen(port, '127.0.0.1', () => { // bind loopback only — the board isn't for the whole LAN
             ctx.print(`dashboard live at http://localhost:${port}  (Ctrl+C to stop)`);
-            // ponytail: never resolve — the http server keeps the process alive until the user kills it.
+            // note: never resolve — the http server keeps the process alive until the user kills it.
           });
         });
       },

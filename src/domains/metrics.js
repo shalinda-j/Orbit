@@ -14,7 +14,7 @@ function countBy(items, key) {
   return out;
 }
 
-// ponytail: fixed 20-cell bar; good enough for a terminal, no need for terminal-width probing.
+// note: fixed 20-cell bar; good enough for a terminal, no need for terminal-width probing.
 function bar(n, max) {
   if (max <= 0) return '';
   return '█'.repeat(Math.round((n / max) * 20));

@@ -1,11 +1,22 @@
 # Changelog
 
+## v1.1.1
+
+### Added
+- **Slash-command autocomplete** — type `/` in the TUI to see matching commands live below the prompt; press **Tab** to complete. Covers every session command and domain.
+- **12 Chinese model providers** (all OpenAI-compatible) — Qwen (Alibaba), Zhipu GLM, Kimi/Moonshot (CN), MiniMax, Yi (01.AI), Baichuan, Tencent Hunyuan, Doubao (Volcengine), StepFun, SenseNova, iFlytek Spark, SiliconFlow. **28 providers total.**
+- Reaffirmed **connect any custom model** with `orbit connect add --name … --base-url … --key-env … --model …` (no code changes needed).
+
+### Changed
+- Removed the "4 Layers of AI Engineering" section from the README.
+- Stronger lazy-mode directive (reuse → stdlib → native → one line).
+
 ## v1.1.0
 
 Token-frugality controls, polished docs, and a mapping to the 4 layers of AI engineering.
 
 ### Added
-- **Ponytail "lazy" mode** — `/lazy` (or `ORBIT_LAZY=1`): Genesis uses the fewest agents, every agent turn gets a hard "output the minimum" directive, and output is capped at ≤1024 tokens.
+- **Lazy "lazy" mode** — `/lazy` (or `ORBIT_LAZY=1`): Genesis uses the fewest agents, every agent turn gets a hard "output the minimum" directive, and output is capped at ≤1024 tokens.
 - **Output-token cap** — `/tokens N` (or `ORBIT_MAX_TOKENS`) threaded through **every** provider (OpenAI, Anthropic, Gemini, NVIDIA, Ollama, all OpenAI-compatible presets).
 - **Single-agent runs skip the synthesizer** — one fewer model call when there's nothing to combine.
 - Banner now shows `⚡ lazy` when active; version reads from `package.json`.

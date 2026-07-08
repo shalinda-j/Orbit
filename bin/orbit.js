@@ -10,7 +10,7 @@ import { Orchestrator } from '../src/orchestrator.js';
 import { generateAgentTeam } from '../src/genesis.js';
 import { getProvider } from '../src/providers/index.js';
 import { discoverTools } from '../src/mcpclient.js';
-import { dispatch, isCommand, helpText } from '../src/cli.js';
+import { dispatch, isCommand, helpText, loadDomains } from '../src/cli.js';
 import { extInit, extProviderNames, emit } from '../src/extensions.js';
 import {
   COLORS, clearScreen, clearLine, getAgentColor, modeColor,
@@ -74,6 +74,20 @@ TOGETHER_API_KEY=
 MISTRAL_API_KEY=
 XAI_API_KEY=
 FIREWORKS_API_KEY=
+
+# Chinese model providers (OpenAI-compatible):
+DASHSCOPE_API_KEY=   # Qwen (Alibaba)
+ZHIPU_API_KEY=       # Zhipu GLM (CN)
+MOONSHOT_API_KEY=    # Moonshot / Kimi (CN)
+MINIMAX_API_KEY=
+YI_API_KEY=          # 01.AI
+BAICHUAN_API_KEY=
+HUNYUAN_API_KEY=     # Tencent
+ARK_API_KEY=         # Doubao (Volcengine)
+STEPFUN_API_KEY=
+SENSENOVA_API_KEY=
+SPARK_API_KEY=       # iFlytek
+SILICONFLOW_API_KEY=
 
 # Claude Code subscription — NO API key needed. Just install Claude Code and log in
 # (run \`claude\` once, or \`claude setup-token\`). Orbit auto-detects the \`claude\` CLI.
@@ -139,12 +153,44 @@ async function main() {
   const activeProviders = PROVIDER_NAMES.filter(isProviderConfigured).concat(extNames); // ext providers are configured by definition
   await emit('session.start', { cwd: process.cwd() });
 
+  // Every slash command (session commands + every domain + aliases) for autocomplete.
+  const SESSION_CMDS = ['/help', '/model', '/mode', '/chat', '/plan', '/build', '/skip', '/style', '/lazy', '/tokens', '/turns', '/clear', '/exit'];
+  const ALIASES = ['/board', '/team', '/brain', '/channel'];
+  const SLASH = [...new Set([...SESSION_CMDS, ...ALIASES, ...Object.keys(await loadDomains()).map(n => '/' + n)])].sort();
+
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
     prompt: renderPrompt(mode),
     terminal: true,
+    // Tab-completion for slash commands.
+    completer: (line) => {
+      if (!line.startsWith('/')) return [[], line];
+      const hits = SLASH.filter(c => c.startsWith(line.toLowerCase()));
+      return [hits.length ? hits : SLASH, line];
+    },
   });
+
+  // Live suggestion line: as you type `/…`, show matching commands just below the prompt.
+  let suggestShown = false;
+  const clearSuggest = () => {
+    if (!suggestShown || !process.stdout.isTTY) { suggestShown = false; return; }
+    process.stdout.write('\x1b7\n\x1b[2K\x1b8'); // save cursor · down · clear line · restore
+    suggestShown = false;
+  };
+  const renderSuggest = () => {
+    if (!process.stdout.isTTY) return;
+    const line = (rl.line || '').toLowerCase();
+    const active = line.startsWith('/') && !line.includes(' ');
+    process.stdout.write('\x1b7\n\x1b[2K'); // save · down · clear
+    if (active) {
+      const hits = SLASH.filter(c => c.startsWith(line)).slice(0, 16);
+      if (hits.length) process.stdout.write('  ' + COLORS.dim(hits.join('  ')));
+    }
+    process.stdout.write('\x1b8'); // restore cursor
+    suggestShown = active;
+  };
+  if (process.stdout.isTTY) process.stdin.on('keypress', () => renderSuggest());
 
   const providerStatuses = providerNames.map(name => ({
     name,
@@ -172,6 +218,7 @@ async function main() {
 
   // ── Input Handler ──
   rl.on('line', async (input) => {
+    clearSuggest();
     const trimmed = input.trim();
 
     if (!trimmed) {
@@ -438,7 +485,7 @@ async function handleSlashCommand(input, rl, agents, providerStatuses) {
     case '/lazy':
       config.lazy = !config.lazy;
       console.log('');
-      console.log(COLORS.dim('  └ ') + COLORS.muted('Lazy (ponytail) mode → ') +
+      console.log(COLORS.dim('  └ ') + COLORS.muted('Lazy mode → ') +
         (config.lazy
           ? COLORS.success('on') + COLORS.dim('  (fewest agents · terse output · output capped ≤1024 tokens)')
           : COLORS.bright('off')));

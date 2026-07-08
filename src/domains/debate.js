@@ -65,7 +65,7 @@ export default {
         const id = parseInt(a._[0], 10);
         const text = textOf(a);
         if (!text) throw new Error('need revised text');
-        // ponytail: a revision is just a proposal flagged as such — no separate history needed
+        // note: a revision is just a proposal flagged as such — no separate history needed
         await withStore(s => { find(s, id).proposals.push({ by: a.by || '', text, ts: Date.now(), revision: true }); });
         ctx.print(`  ✓ #${id} revised by ${a.by || '?'}`);
       },

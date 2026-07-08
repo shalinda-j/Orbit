@@ -1,8 +1,8 @@
 import { getProvider } from './providers/index.js';
 import { config } from './config.js';
 
-// Ponytail "lazy" mode: a hard concision directive appended to every agent turn to cut token spend.
-const LAZY_RULE = `\n\nLAZY MODE (token-frugal): output the absolute minimum that fully solves the task. Code/answer only — no explanation, no preamble, no restating anything, no options. If one line does it, write one line.`;
+// Lazy mode: a hard frugality directive appended to every agent turn to cut token spend.
+const LAZY_RULE = `\n\nLAZY MODE (token-frugal): output the absolute minimum that fully solves the task. Code/answer only — no explanation, no preamble, no restating, no alternatives. Before writing code, prefer: reuse what exists → standard library → a native/built-in feature → one line. Don't build what isn't needed. If one line does it, write one line.`;
 
 export class Agent {
   /**

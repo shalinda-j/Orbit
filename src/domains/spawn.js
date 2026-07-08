@@ -14,7 +14,7 @@ function kickoff(role, dir) {
 }
 
 // Build the OS-specific command that opens a new terminal in `dir` running the CLI.
-// ponytail: we don't inject the kickoff through nested shells (quoting is fragile) —
+// note: we don't inject the kickoff through nested shells (quoting is fragile) —
 // it's posted to the channel instead, so the agent reads it with `orbit msg read`.
 function terminalCmd(cli, dir, terminal) {
   const cmd = CLI_COMMANDS[cli] || cli;
