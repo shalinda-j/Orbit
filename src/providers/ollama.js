@@ -1,4 +1,4 @@
-import { config } from '../config.js';
+import { config, maxTokens } from '../config.js';
 
 export class OllamaProvider {
   constructor() {
@@ -28,7 +28,8 @@ export class OllamaProvider {
       messages: formattedMessages,
       stream: false,
       options: {
-        temperature: temperature
+        temperature: temperature,
+        num_predict: maxTokens(),
       }
     };
 

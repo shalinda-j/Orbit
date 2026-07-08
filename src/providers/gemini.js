@@ -1,4 +1,4 @@
-import { config } from '../config.js';
+import { config, maxTokens } from '../config.js';
 
 export class GeminiProvider {
   constructor() {
@@ -27,6 +27,7 @@ export class GeminiProvider {
       contents: contents,
       generationConfig: {
         temperature: temperature,
+        maxOutputTokens: maxTokens(),
       }
     };
 

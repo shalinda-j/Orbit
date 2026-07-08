@@ -1,4 +1,4 @@
-import { config } from '../config.js';
+import { config, maxTokens } from '../config.js';
 
 export class NvidiaProvider {
   constructor() {
@@ -49,7 +49,7 @@ export class NvidiaProvider {
       model: selectedModel,
       messages: formattedMessages,
       temperature: temperature,
-      max_tokens: 4096,
+      max_tokens: maxTokens(),
     };
 
     try {

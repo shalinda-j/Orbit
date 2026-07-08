@@ -2,7 +2,7 @@
 # AUR package for orbit — after publishing: paru -S orbit-cli   (or yay -S orbit-cli)
 # Update pkgver + the source tarball's sha256 (or keep SKIP for git snapshots) before submitting.
 pkgname=orbit-cli
-pkgver=1.0.1
+pkgver=1.1.0
 pkgrel=1
 pkgdesc="Multi-agent, multi-provider AI team CLI"
 arch=('any')

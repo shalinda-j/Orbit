@@ -150,7 +150,7 @@ async function main() {
     name,
     configured: activeProviders.includes(name)
   }));
-  const bannerState = () => ({ mode, permissions, style, turns: maxTurns });
+  const bannerState = () => ({ mode, permissions, style, turns: maxTurns, lazy: config.lazy });
 
   // ── Welcome Screen ──
   clearScreen();
@@ -435,6 +435,30 @@ async function handleSlashCommand(input, rl, agents, providerStatuses) {
       console.log('');
       break;
 
+    case '/lazy':
+      config.lazy = !config.lazy;
+      console.log('');
+      console.log(COLORS.dim('  └ ') + COLORS.muted('Lazy (ponytail) mode → ') +
+        (config.lazy
+          ? COLORS.success('on') + COLORS.dim('  (fewest agents · terse output · output capped ≤1024 tokens)')
+          : COLORS.bright('off')));
+      console.log('');
+      break;
+
+    case '/tokens':
+      const tk = parseInt(parts[1], 10);
+      if (tk && tk >= 128 && tk <= 32000) {
+        config.limits.maxTokens = tk;
+        console.log('');
+        console.log(COLORS.dim('  └ ') + COLORS.muted('Max output tokens → ') + COLORS.bright(String(tk)));
+        console.log('');
+      } else {
+        console.log('');
+        console.log(COLORS.dim('  └ ') + COLORS.muted(`Usage: /tokens <128-32000> · Current: ${config.limits.maxTokens}`));
+        console.log('');
+      }
+      break;
+
     case '/turns':
       const n = parseInt(parts[1]);
       if (n && n > 0 && n <= 20) {
@@ -452,7 +476,7 @@ async function handleSlashCommand(input, rl, agents, providerStatuses) {
     case '/clear':
       clearScreen();
       console.log('');
-      console.log(renderBanner(providerStatuses, process.cwd(), { mode, permissions, style, turns: maxTurns }));
+      console.log(renderBanner(providerStatuses, process.cwd(), { mode, permissions, style, turns: maxTurns, lazy: config.lazy }));
       console.log('');
       console.log(renderStatusBar());
       console.log('');

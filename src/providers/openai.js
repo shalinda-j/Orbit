@@ -1,4 +1,4 @@
-import { config } from '../config.js';
+import { config, maxTokens } from '../config.js';
 
 export class OpenAIProvider {
   constructor() {
@@ -31,6 +31,7 @@ export class OpenAIProvider {
       model: selectedModel,
       messages: formattedMessages,
       temperature: temperature,
+      max_tokens: maxTokens(),
     };
 
     try {

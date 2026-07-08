@@ -8,7 +8,7 @@
 Put different models on different agents and let them plan, build, review, and communicate as one team — coordinating through a shared task board, channel, and persistent brain.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-8A2BE2.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.0.1-67E8F9.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.1.0-67E8F9.svg)](CHANGELOG.md)
 [![Node](https://img.shields.io/badge/node-%3E%3D18-34D399.svg)](https://nodejs.org)
 [![Providers](https://img.shields.io/badge/providers-16-A78BFA.svg)](#providers)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](#contributing)
@@ -128,22 +128,7 @@ Like Claude Code, the TUI has modes (shown in the prompt). Cycle with `/mode`, o
 
 ## How it works
 
-```
-                 ┌─────────────── ./.orbit (shared state) ───────────────┐
-   your goal     │  store.json: tasks · messages · roster · findings …    │
-       │         │  brain/*.md: persistent knowledge                      │
-       ▼         └───────────────────────────────────────────────────────┘
-  ┌─────────┐        ▲            ▲                    ▲
-  │ Genesis │        │            │                    │
-  │ designs │   ┌────┴────┐  ┌────┴────┐          ┌────┴─────┐
-  │  a team │──▶│ Planner │  │  Coder  │   …      │ Reviewer │   ← each on its own provider/model
-  └─────────┘   │ (Gemini)│  │(DeepSeek)│         │  (Kimi)  │
-       │        └────┬────┘  └────┬────┘          └────┬─────┘
-       ▼             └──── Coordinator routes turns ───┘
-  Synthesizer ◀──── agents see each other's work, use tools, until [FINISHED]
-       │
-       ▼  final product
-```
+<div align="center"><img src="docs/architecture.svg" alt="Orbit architecture" width="920"></div>
 
 - **Domains** — every capability is an auto-discovered file in `src/domains/`. Run `orbit help`.
 - **Store** — one JSON file under `.orbit/`, mutated under a lock so many processes/agents coordinate safely.
@@ -152,6 +137,29 @@ Like Claude Code, the TUI has modes (shown in the prompt). Cycle with `/mode`, o
 ### Domains at a glance
 
 `team` · `task` · `msg` · `brain` · `run` · `spawn` · `orchestrate` · `debate` · `finding` · `approval` · `metrics` · `template` · `backup` · `trigger` · `dashboard` · `github` · `gitlab` · `mcp` · `skill` · `plugin` · `hook` · `connect` · `config`
+
+---
+
+## The 4 Layers of AI Engineering
+
+Good AI systems are engineered at four nested layers, not just the prompt. Orbit is built at **all four**:
+
+<div align="center"><img src="docs/four-layers.svg" alt="The 4 layers of AI engineering" width="820"></div>
+
+| Layer | What it is | In Orbit |
+|-------|------------|----------|
+| **Prompt** | The exact wording, instructions, and constraints. | Per-agent personas + coordinator/synthesizer prompts, tuned for concision and explicit stop conditions ([`src/agent.js`](src/agent.js), [`src/genesis.js`](src/genesis.js)). |
+| **Context** | System instructions, reference files, and history the model reads first. | Windowed history pruning, the shared brain/board, and **bridged MCP tools** injected per turn ([`src/orchestrator.js`](src/orchestrator.js)). |
+| **Harness** | Code that routes tools, verifies outputs, and retries so the model checks its own work. | The tool-loop (parse → execute → feed back), `toolPolicy` guardrails, and a **Reviewer agent** that validates before `[FINISHED]` ([`src/tools.js`](src/tools.js), [`src/orchestrator.js`](src/orchestrator.js)). |
+| **Loop** | A defined goal + stop condition that let the system run, check, and adjust on its own. | The coordinator-routed multi-agent loop with `[FINISHED]` / max-turns stop conditions and final synthesis. |
+
+### Token frugality (ponytail mode)
+
+The most expensive layer is the loop — many model calls. Orbit gives you direct control:
+
+- **`/lazy`** (or `ORBIT_LAZY=1`) — **ponytail mode**: Genesis uses the fewest agents, every turn gets a hard "output the minimum" directive, and output is capped at ≤1024 tokens.
+- **`/tokens N`** (or `ORBIT_MAX_TOKENS`) — cap output tokens per model call.
+- **`chat` mode** answers in a single call (no team, no synthesis); single-agent runs **skip the synthesizer** automatically.
 
 ---
 

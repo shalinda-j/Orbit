@@ -163,9 +163,16 @@ export class Orchestrator {
       }
     }
 
-    // Synthesis Phase: Synthesize the full internal conference discussion into a final neat product to the user
-    if (onAgentSpeak) onAgentSpeak('System', 'Synthesizing final product...', true);
-    const finalProduct = await this.synthesizeFinalProduct(task, discussionHistory);
+    // Synthesis Phase: combine the conference into one clean product.
+    // Skip it when there's nothing to combine (a single agent) — the last message IS the product.
+    // Saves a full LLM call per run.
+    let finalProduct;
+    if (this.agents.length <= 1 && discussionHistory.length) {
+      finalProduct = discussionHistory[discussionHistory.length - 1].content;
+    } else {
+      if (onAgentSpeak) onAgentSpeak('System', 'Synthesizing final product...', true);
+      finalProduct = await this.synthesizeFinalProduct(task, discussionHistory);
+    }
 
     return {
       finalOutput: finalProduct,

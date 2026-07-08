@@ -1,4 +1,8 @@
 import { getProvider } from './providers/index.js';
+import { config } from './config.js';
+
+// Ponytail "lazy" mode: a hard concision directive appended to every agent turn to cut token spend.
+const LAZY_RULE = `\n\nLAZY MODE (token-frugal): output the absolute minimum that fully solves the task. Code/answer only — no explanation, no preamble, no restating anything, no options. If one line does it, write one line.`;
 
 export class Agent {
   /**
@@ -47,6 +51,8 @@ Workspace tools (optional — use one ONLY when it changes your answer). Emit a 
 - <tool:list_dir path="rel/path" />
 - <tool:run_command command="..." />
 The system runs it and returns [Tool Output]; then you continue.`;
+
+    if (config.lazy) systemPrompt += LAZY_RULE;
 
     // Orchestrator may inject extra tool context (e.g. bridged MCP tools) for this turn.
     if (options.extraSystem) systemPrompt += `\n\n${options.extraSystem}`;

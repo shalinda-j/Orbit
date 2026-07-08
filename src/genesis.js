@@ -1,4 +1,5 @@
 import { getProvider } from './providers/index.js';
+import { config } from './config.js';
 
 // ─────────────────────────────────────────────
 // Genesis — designs a custom 1–4 agent team for a task using an LLM.
@@ -72,7 +73,7 @@ For each agent in the team, you must specify:
 
 You MUST return ONLY a valid JSON array of agent objects, containing the keys: "name", "role", "instructions", "provider", "model".
 Do NOT wrap the JSON in markdown code blocks like \`\`\`json. Output raw JSON.
-If the task is simple, 1 or 2 agents are enough. If complex, use 3 or 4.`;
+If the task is simple, 1 or 2 agents are enough. If complex, use 3 or 4.${config.lazy ? '\nLAZY MODE: minimize token cost — use the FEWEST agents that can do the job (prefer 1, at most 2).' : ''}`;
 
   try {
     const response = await provider.chat({

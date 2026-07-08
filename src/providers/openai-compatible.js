@@ -1,3 +1,5 @@
+import { maxTokens } from '../config.js';
+
 /**
  * One provider class for every OpenAI-compatible endpoint (OpenRouter, z.ai, Kimi,
  * Groq, DeepSeek, Together, Mistral, xAI, Fireworks, and any manually-added provider).
@@ -26,7 +28,7 @@ export class OpenAICompatibleProvider {
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${this.apiKey}` },
-        body: JSON.stringify({ model: selectedModel, messages: formatted, temperature, max_tokens: 4096 }),
+        body: JSON.stringify({ model: selectedModel, messages: formatted, temperature, max_tokens: maxTokens() }),
       });
       if (!res.ok) throw new Error(`${this.name} API error (${res.status}): ${(await res.text()).slice(0, 300)}`);
 

@@ -88,7 +88,7 @@ export function modeColor(mode) {
 // Banner (flat, no boxes)
 // ─────────────────────────────────────────────
 export function renderBanner(providerStatuses, cwd, state = {}) {
-  const { mode = 'build', permissions = 'safe', style = 'collaborative', turns = 6 } = state;
+  const { mode = 'build', permissions = 'safe', style = 'collaborative', turns = 6, lazy = false } = state;
   const cols = process.stdout.columns || 80;
   const wm = getWordmark();   // 34 visible cols
   const lines = [''];
@@ -119,7 +119,8 @@ export function renderBanner(providerStatuses, cwd, state = {}) {
     COLORS.muted('Mode ') + mc.bold(mode) +
     COLORS.dim(' · ') + COLORS.muted('Perms ') + (permissions === 'auto' ? COLORS.warning('auto') : COLORS.text('safe')) +
     COLORS.dim(' · ') + COLORS.muted('Style ') + COLORS.text(style) +
-    COLORS.dim(' · ') + COLORS.muted('Turns ') + COLORS.text(String(turns))
+    COLORS.dim(' · ') + COLORS.muted('Turns ') + COLORS.text(String(turns)) +
+    (lazy ? COLORS.dim(' · ') + COLORS.success('⚡ lazy') : '')
   );
   lines.push(COLORS.dim('  └ ') + COLORS.muted('Team ') + COLORS.bright('Dynamic (generated per task)'));
 
@@ -226,6 +227,8 @@ export function renderHelp() {
     row('/chat /plan /build', 'Set mode directly'),
     row('/skip', 'Toggle permissions: safe ↔ auto'),
     row('/style', 'Toggle collaborative ↔ sequential'),
+    row('/lazy', 'Toggle ponytail mode — fewest agents, terse, fewer tokens'),
+    row('/tokens N', 'Cap output tokens per turn'),
     row('/turns N', 'Set max collaboration turns'),
     row('/model [name]', 'View or set the NVIDIA model'),
     row('/clear', 'Clear the screen'),

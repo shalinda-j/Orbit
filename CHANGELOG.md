@@ -1,5 +1,19 @@
 # Changelog
 
+## v1.1.0
+
+Token-frugality controls, polished docs, and a mapping to the 4 layers of AI engineering.
+
+### Added
+- **Ponytail "lazy" mode** — `/lazy` (or `ORBIT_LAZY=1`): Genesis uses the fewest agents, every agent turn gets a hard "output the minimum" directive, and output is capped at ≤1024 tokens.
+- **Output-token cap** — `/tokens N` (or `ORBIT_MAX_TOKENS`) threaded through **every** provider (OpenAI, Anthropic, Gemini, NVIDIA, Ollama, all OpenAI-compatible presets).
+- **Single-agent runs skip the synthesizer** — one fewer model call when there's nothing to combine.
+- Banner now shows `⚡ lazy` when active; version reads from `package.json`.
+
+### Docs
+- Colorful SVG **architecture diagram** and a **"4 Layers of AI Engineering"** section mapping Prompt / Context / Harness / Loop to Orbit's implementation.
+- MIT license; professional README with hero banner, badges, and provider/mode tables.
+
 ## v1.0.1
 
 Stability release. A 30-agent adversarial audit of every command found 19 real bugs; all are fixed and covered by regression tests.

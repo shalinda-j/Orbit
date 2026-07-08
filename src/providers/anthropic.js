@@ -1,4 +1,4 @@
-import { config } from '../config.js';
+import { config, maxTokens } from '../config.js';
 
 export class AnthropicProvider {
   constructor() {
@@ -23,7 +23,7 @@ export class AnthropicProvider {
     const body = {
       model: selectedModel,
       messages: formattedMessages,
-      max_tokens: 4000,
+      max_tokens: maxTokens(),
       temperature: temperature,
     };
 
