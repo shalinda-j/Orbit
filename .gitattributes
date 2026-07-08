@@ -1,0 +1,4 @@
+# Normalize line endings — store everything as LF in the repo.
+# Critical for install.sh: CRLF would break `curl … | bash` on Linux/macOS.
+* text=auto eol=lf
+*.ps1 text eol=crlf
