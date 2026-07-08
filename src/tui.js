@@ -240,6 +240,7 @@ export function renderHelp() {
     COLORS.bright.bold('  Session'),
     COLORS.dim('  │'),
     row('/help', 'Show this help'),
+    row('/connect', 'Add a provider (interactive setup wizard)'),
     row('/mode', 'Cycle mode: chat → plan → build'),
     row('/chat /plan /build', 'Set mode directly'),
     row('/skip', 'Toggle permissions: safe ↔ auto'),

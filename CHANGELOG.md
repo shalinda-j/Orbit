@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.2.0
+
+### Added
+- **Interactive provider setup wizard** — type **`/connect`** in the TUI and connect providers **one at a time**: pick → paste key → optional model → save → "add another?". No more hand-editing `.env`.
+- **Global key store** — keys entered via the wizard (or `orbit connect set`) are saved to `~/.orbit/.env` and loaded in every project, so you configure a provider once. Project `./.env` still overrides.
+- **`orbit connect set <provider> <key> [--model M] [--base-url U]`** — set a provider non-interactively from the CLI.
+
+### Fixed
+- Wizard input handling is race-proof: fast/pasted answers are buffered so nothing is mistaken for a task.
+
 ## v1.1.3
 
 ### Fixed

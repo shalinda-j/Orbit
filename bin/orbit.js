@@ -4,7 +4,7 @@ import readline from 'readline';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { config, isProviderConfigured, PROVIDER_NAMES } from '../src/config.js';
+import { config, isProviderConfigured, PROVIDER_NAMES, providerEnv, applyProviderConfig, setGlobalEnv } from '../src/config.js';
 import { Agent } from '../src/agent.js';
 import { Orchestrator } from '../src/orchestrator.js';
 import { generateAgentTeam } from '../src/genesis.js';
@@ -113,6 +113,78 @@ let exiting = false;             // guard exitGracefully against re-entry (rl.cl
 let pending = Promise.resolve(); // serializes slash-command work so exit can wait for it to flush
 let taskGen = 0;                 // bumped on each task start AND on Ctrl+C, to invalidate an aborted run
 let activeSpinner = null;        // current task's spinner, so SIGINT can stop it
+let wizardActive = false;        // true for the whole /connect wizard session
+let wizardResolve = null;        // set while the wizard awaits the next line
+const wizardBuf = [];            // lines that arrived before the next question was posted (paste / fast input)
+
+// Ask one question inside the wizard: consume a buffered line if any, else show the prompt and wait.
+function ask(rl, question) {
+  return new Promise((resolve) => {
+    if (wizardBuf.length) { resolve(wizardBuf.shift()); return; }
+    wizardResolve = resolve;
+    rl.setPrompt(COLORS.secondary('  ' + question));
+    rl.prompt();
+  });
+}
+
+// Interactive provider onboarding — one provider at a time: pick → key → model → save → repeat.
+async function runConnectWizard(rl, providerStatuses) {
+  const keyless = {
+    'claude-code': 'Install Claude Code and log in (`claude`) — no key needed.',
+    ollama: 'Runs locally — no key needed (start Ollama, then pick it in a run).',
+  };
+  wizardActive = true;
+  console.log('');
+  console.log(COLORS.bright.bold('  Connect a provider') + COLORS.dim('   (Enter a number, or blank to finish)'));
+  try {
+    while (true) {
+      providerStatuses.forEach((p, i) => {
+        const dot = p.configured ? COLORS.success('●') : COLORS.dim('○');
+        console.log(`   ${String(i + 1).padStart(2)}. ${dot} ${COLORS.text(p.name)}`);
+      });
+      const pick = (await ask(rl, 'Provider # or name: ')).trim().toLowerCase();
+      if (!pick) break;
+      const idx = /^\d+$/.test(pick) ? parseInt(pick, 10) - 1 : providerStatuses.findIndex(p => p.name === pick);
+      const chosen = providerStatuses[idx];
+      if (!chosen) { console.log(COLORS.error('   ✗ not found')); continue; }
+      const name = chosen.name;
+
+      if (keyless[name]) { console.log(COLORS.muted('   ' + keyless[name])); console.log(''); continue; }
+      const env = providerEnv(name);
+      if (!env) { console.log(COLORS.muted('   no key needed')); console.log(''); continue; }
+
+      let baseUrl;
+      if (env.needsBaseUrl) {
+        baseUrl = (await ask(rl, 'Base URL (e.g. https://api.example.com/v1): ')).trim();
+        if (!baseUrl) { console.log(COLORS.muted('   skipped (base URL required)')); console.log(''); continue; }
+      }
+      const key = (await ask(rl, `API key (${env.keyEnv}): `)).trim();
+      if (!key) { console.log(COLORS.muted('   skipped')); console.log(''); continue; }
+      const cur = config.providers[name]?.defaultModel || '';
+      const model = (await ask(rl, `Model [${cur || 'default'}] (blank = keep): `)).trim();
+
+      setGlobalEnv(env.keyEnv, key);
+      if (model && env.modelEnv) setGlobalEnv(env.modelEnv, model);
+      if (baseUrl && env.baseUrlEnv) setGlobalEnv(env.baseUrlEnv, baseUrl);
+      applyProviderConfig(name, { key, model, baseUrl });
+      chosen.configured = true;
+      console.log(COLORS.success(`   ✓ ${name} connected`) + COLORS.dim(`  · saved to ~/.orbit/.env`));
+
+      const more = (await ask(rl, 'Add another? (Y/n): ')).trim().toLowerCase();
+      if (more === 'n' || more === 'no') break;
+      console.log('');
+    }
+  } finally {
+    wizardActive = false;
+    wizardResolve = null;
+    wizardBuf.length = 0;
+    rl.setPrompt(renderPrompt(mode));
+  }
+  const on = providerStatuses.filter(p => p.configured).map(p => p.name);
+  console.log('');
+  console.log(COLORS.muted('  Connected: ') + (on.length ? COLORS.text(on.join(', ')) : COLORS.dim('none')));
+  console.log('');
+}
 
 // Team generation now lives in ../src/genesis.js (shared with `orbit run`).
 
@@ -156,7 +228,7 @@ async function main() {
   await emit('session.start', { cwd: process.cwd() });
 
   // Every slash command (session commands + every domain + aliases) for autocomplete.
-  const SESSION_CMDS = ['/help', '/model', '/mode', '/chat', '/plan', '/build', '/skip', '/style', '/lazy', '/anim', '/tokens', '/turns', '/clear', '/exit'];
+  const SESSION_CMDS = ['/help', '/connect', '/model', '/mode', '/chat', '/plan', '/build', '/skip', '/style', '/lazy', '/anim', '/tokens', '/turns', '/clear', '/exit'];
   const ALIASES = ['/board', '/team', '/brain', '/channel'];
   const SLASH = [...new Set([...SESSION_CMDS, ...ALIASES, ...Object.keys(await loadDomains()).map(n => '/' + n)])].sort();
 
@@ -199,6 +271,12 @@ async function main() {
 
   // ── Input Handler ──
   rl.on('line', async (input) => {
+    // While the /connect wizard is running, route the line to it (or buffer it if a question isn't posted yet).
+    if (wizardActive) {
+      if (wizardResolve) { const r = wizardResolve; wizardResolve = null; r(input); }
+      else wizardBuf.push(input);
+      return;
+    }
     const trimmed = input.trim();
 
     if (!trimmed) {
@@ -209,6 +287,9 @@ async function main() {
     // Slash commands — serialize so bulk/pasted input runs in order and exit can await it.
     // The .catch keeps `pending` resolved: one failing command can't poison the chain or crash the TUI.
     if (trimmed.startsWith('/')) {
+      // /connect runs directly (not via the microtask chain) so its first prompt registers
+      // synchronously — otherwise the next typed line would be treated as a task, not an answer.
+      if (trimmed.toLowerCase() === '/connect') { await runConnectWizard(rl, providerStatuses); rl.prompt(); return; }
       pending = pending
         .then(() => handleSlashCommand(trimmed, rl, [], providerStatuses))
         .catch((err) => { console.log(COLORS.dim('  └ ') + COLORS.error(err.message)); rl.prompt(); });
@@ -354,6 +435,12 @@ async function main() {
 
   // Ctrl+C
   rl.on('SIGINT', () => {
+    if (wizardActive) { // Ctrl+C during the connect wizard: nudge it to finish, don't exit
+      console.log('');
+      if (wizardResolve) { const r = wizardResolve; wizardResolve = null; r(''); }
+      else { wizardBuf.length = 0; wizardBuf.push(''); }
+      return;
+    }
     if (isProcessing) {
       taskGen++;                 // invalidate the running task so it stops printing / can't reset state
       if (activeSpinner) activeSpinner.stop();

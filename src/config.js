@@ -1,11 +1,15 @@
 import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
 import { spawnSync } from 'child_process';
 import { PRESETS, baseUrlEnv } from './providers/presets.js';
 
-// Load environment variables from .env in current working directory
-dotenv.config({ quiet: true }); // note: silence dotenv's tip banner — it pollutes CLI stdout that agents parse
+// Load .env: project (cwd) first (highest precedence), then a global ~/.orbit/.env fallback
+// so keys entered once via `orbit connect` persist across every project.
+dotenv.config({ quiet: true });
+export const globalEnvFile = () => path.join(os.homedir(), '.orbit', '.env');
+dotenv.config({ path: globalEnvFile(), quiet: true }); // won't override vars already set by cwd .env
 
 export const config = {
   providers: {
@@ -91,4 +95,48 @@ export function isProviderConfigured(providerName) {
   if (providerName === 'custom') return !!prov.baseUrl;  // key optional (local endpoints), URL required
   if (providerName === 'claude-code') return claudeCodeAvailable(); // subscription via the `claude` CLI
   return !!prov.apiKey;
+}
+
+// ── Provider onboarding (used by the `/connect` wizard and `orbit connect set`) ──
+// Which env vars hold each provider's key / model (native providers; presets come from PRESETS).
+const NATIVE_ENV = {
+  openai:    { keyEnv: 'OPENAI_API_KEY',    modelEnv: 'OPENAI_DEFAULT_MODEL' },
+  anthropic: { keyEnv: 'ANTHROPIC_API_KEY', modelEnv: 'ANTHROPIC_DEFAULT_MODEL' },
+  gemini:    { keyEnv: 'GEMINI_API_KEY',    modelEnv: 'GEMINI_DEFAULT_MODEL' },
+  nvidia:    { keyEnv: 'NVIDIA_API_KEY',    modelEnv: 'NVIDIA_DEFAULT_MODEL' },
+  custom:    { keyEnv: 'CUSTOM_API_KEY',    modelEnv: 'CUSTOM_DEFAULT_MODEL', baseUrlEnv: 'CUSTOM_BASE_URL', needsBaseUrl: true },
+};
+
+// Env-var descriptor for a provider, or null for keyless providers (claude-code, ollama).
+export function providerEnv(name) {
+  if (NATIVE_ENV[name]) return NATIVE_ENV[name];
+  const p = PRESETS[name];
+  if (p) return { keyEnv: p.keyEnv, modelEnv: p.modelEnv, baseUrlEnv: baseUrlEnv(p.keyEnv) };
+  return null;
+}
+
+// Apply a provider's key/model/baseUrl to the live config so it works this session (no restart).
+export function applyProviderConfig(name, { key, model, baseUrl } = {}) {
+  const p = config.providers[name];
+  if (!p) return;
+  if (key) p.apiKey = key;
+  if (model) p.defaultModel = model;
+  if (baseUrl) p.baseUrl = baseUrl;
+}
+
+// Upsert a KEY=value line in an .env file's text (pure — testable without touching disk).
+export function upsertEnvLine(content, key, value) {
+  const line = `${key}=${value}`;
+  const re = new RegExp(`^${key}=.*$`, 'm');
+  if (re.test(content)) return content.replace(re, line);
+  return (content && !content.endsWith('\n') ? content + '\n' : content) + line + '\n';
+}
+
+// Persist an env var to the global ~/.orbit/.env AND set it live for this process.
+export function setGlobalEnv(key, value) {
+  const f = globalEnvFile();
+  fs.mkdirSync(path.dirname(f), { recursive: true });
+  const content = fs.existsSync(f) ? fs.readFileSync(f, 'utf8') : '';
+  fs.writeFileSync(f, upsertEnvLine(content, key, value), 'utf8');
+  process.env[key] = value;
 }

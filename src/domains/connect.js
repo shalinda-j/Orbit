@@ -1,4 +1,4 @@
-import { config, isProviderConfigured, PROVIDER_NAMES } from '../config.js';
+import { config, isProviderConfigured, PROVIDER_NAMES, providerEnv, applyProviderConfig, setGlobalEnv } from '../config.js';
 import { PRESETS } from '../providers/presets.js';
 import { addToProjectConfig } from '../orbitconfig.js';
 import { extProviderNames } from '../extensions.js';
@@ -39,6 +39,24 @@ export default {
         }
         ctx.print('\n  Presets are OpenAI-compatible — just add <NAME>_API_KEY (override with <NAME>_MODEL / <NAME>_BASE_URL).');
         ctx.print('  Add your own:  orbit connect add --name myllm --base-url https://… --key-env MY_KEY --model …\n');
+      },
+    },
+    set: {
+      desc: 'Set a provider key non-interactively: connect set <provider> <api-key> [--model M] [--base-url U]',
+      run: async (a, ctx) => {
+        const name = a._[0];
+        const key = a._[1] || a.key;
+        if (!name) throw new Error('usage: connect set <provider> <api-key> [--model M]');
+        const env = providerEnv(name);
+        if (!env) throw new Error(`"${name}" takes no API key (or is unknown) — see \`orbit connect\``);
+        if (env.needsBaseUrl && !a['base-url'] && !a.baseUrl) throw new Error('this provider needs --base-url too');
+        if (!key) throw new Error('need an API key');
+        setGlobalEnv(env.keyEnv, key);
+        if (a.model && env.modelEnv) setGlobalEnv(env.modelEnv, a.model);
+        const baseUrl = a['base-url'] || a.baseUrl;
+        if (baseUrl && env.baseUrlEnv) setGlobalEnv(env.baseUrlEnv, baseUrl);
+        applyProviderConfig(name, { key, model: a.model, baseUrl });
+        ctx.print(`  ✓ ${name} connected — saved to ~/.orbit/.env`);
       },
     },
     add: {
