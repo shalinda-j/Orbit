@@ -82,10 +82,23 @@ export async function dispatch(argv) {
     cmd = domain.commands.default;
     rest2 = action !== undefined ? [action, ...rest] : rest;
   }
+  if (!cmd && action === undefined) {
+    // Bare `orbit <domain>` — run a conventional read-only action so it does something useful.
+    const key = ['list', 'status', 'summary', 'board', 'recent'].find(k => domain.commands[k]);
+    if (key) { cmd = domain.commands[key]; rest2 = []; }
+  }
   if (!cmd) {
-    const actions = Object.keys(domain.commands).filter(k => k !== 'default');
-    console.log(`\n  Unknown action "${action ?? ''}" for "${name}". Available: ${actions.join(', ')}\n`);
-    return 1;
+    // Wrong action, or a bare domain with no listy action → show the domain's actions as help.
+    const lines = [''];
+    if (action !== undefined) lines.push('  ' + `Unknown action "${action}" for "${name}".`);
+    lines.push('  ' + name + (domain.help ? ' — ' + domain.help : ''));
+    for (const [a, c] of Object.entries(domain.commands)) {
+      if (a === 'default') continue;
+      lines.push('     ' + `${name} ${a}`.padEnd(24) + (c.desc || ''));
+    }
+    lines.push('');
+    console.log(lines.join('\n'));
+    return action !== undefined ? 1 : 0;
   }
 
   const args = parseArgs(rest2);

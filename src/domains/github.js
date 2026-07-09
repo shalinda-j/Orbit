@@ -44,8 +44,8 @@ export default {
   help: 'Thin wrapper over the GitHub CLI (gh)',
   commands: {
     default: {
-      desc: 'github <any gh args...> — passthrough to gh',
-      run: (a) => run([...a._, ...flagsOf(a)]),
+      desc: 'github <any gh args...> — passthrough to gh (bare `github` shows auth status)',
+      run: (a) => a._.length ? run([...a._, ...flagsOf(a)]) : run(['auth', 'status']),
     },
     status: {
       desc: 'github status — gh auth status + current repo url',

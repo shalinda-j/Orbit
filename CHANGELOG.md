@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.4.1
+
+### Fixed
+- **Every bare `/command` now does something useful** instead of printing "Unknown action". A bare domain runs its conventional read-only action (`list` / `status` / `summary` / `board` / `recent`) when it has one, otherwise it shows that domain's available actions as help. Bare `/github` / `/gitlab` show auth status. A genuinely wrong action still reports the error.
+
 ## v1.4.0
 
 ### Security (an 11-agent adversarial audit found & fixed 7 verified issues)

@@ -44,8 +44,8 @@ export default {
   help: 'Thin wrapper over the GitLab CLI (glab)',
   commands: {
     default: {
-      desc: 'gitlab <any glab args...> — passthrough to glab',
-      run: (a) => run([...a._, ...flagsOf(a)]),
+      desc: 'gitlab <any glab args...> — passthrough to glab (bare `gitlab` shows auth status)',
+      run: (a) => a._.length ? run([...a._, ...flagsOf(a)]) : run(['auth', 'status']),
     },
     status: {
       desc: 'gitlab status — glab auth status',
