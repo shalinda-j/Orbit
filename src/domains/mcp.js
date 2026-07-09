@@ -1,4 +1,4 @@
-import { loadConfig, addToProjectConfig } from '../orbitconfig.js';
+import { loadConfig, addToProjectConfig, addToGlobalConfig } from '../orbitconfig.js';
 import { withServer } from '../mcpclient.js';
 
 export default {
@@ -6,13 +6,18 @@ export default {
   help: 'connect to MCP (Model Context Protocol) stdio servers',
   commands: {
     add: {
-      desc: 'mcp add --name X --command "npx" --args "-y,@modelcontextprotocol/server-filesystem,."',
+      desc: 'mcp add --name X --command npx --args "-y,@modelcontextprotocol/server-filesystem,." [--project]',
       run: async (args, ctx) => {
         const { name, command, args: a } = args;
         if (!name) throw new Error('--name required');
         if (!command) throw new Error('--command required');
         const serverArgs = String(a || '').split(',').filter(Boolean);
-        const f = addToProjectConfig('mcp.servers', { name, command, args: serverArgs });
+        // Default to GLOBAL config — MCP servers execute code, so they're trusted only when the
+        // user adds them, not when a cloned repo ships them. --project stores per-repo (untrusted
+        // unless ORBIT_TRUST_PROJECT=1).
+        const f = args.project
+          ? addToProjectConfig('mcp.servers', { name, command, args: serverArgs })
+          : addToGlobalConfig('mcp.servers', { name, command, args: serverArgs });
         ctx.print(`added mcp server '${name}' -> ${command} ${serverArgs.join(' ')}`);
         ctx.print(`saved to ${f}`);
       },
@@ -20,9 +25,14 @@ export default {
     list: {
       desc: 'mcp list',
       run: async (_args, ctx) => {
-        const servers = loadConfig().mcp?.servers || [];
-        if (!servers.length) return ctx.print('no mcp servers configured (add one with: orbit mcp add)');
+        const cfg = loadConfig();
+        const servers = cfg.mcp?.servers || [];
+        if (!servers.length) ctx.print('no mcp servers configured (add one with: orbit mcp add)');
         for (const s of servers) ctx.print(`${s.name} -> ${s.command} ${(s.args || []).join(' ')}`);
+        if (cfg._projectHasCode && !cfg._trustProject) {
+          ctx.print('\n  ⚠ this project\'s ./.orbit/config.json defines MCP servers/plugins/hooks that are IGNORED');
+          ctx.print('    for safety (a cloned repo could inject code). Set ORBIT_TRUST_PROJECT=1 to enable them.');
+        }
       },
     },
     tools: {

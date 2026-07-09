@@ -56,6 +56,16 @@ export function clearLine() {
   process.stdout.write('\x1B[2K\r');
 }
 
+// Human duration: 45s · 1m 23s · 1h 02m.
+export function fmtDuration(totalSecs) {
+  const s = Math.max(0, Math.floor(totalSecs));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60), rs = s % 60;
+  if (m < 60) return `${m}m ${String(rs).padStart(2, '0')}s`;
+  const h = Math.floor(m / 60), rm = m % 60;
+  return `${h}h ${String(rm).padStart(2, '0')}m`;
+}
+
 // Big block "ORBIT" wordmark, gradient: deep-purple → cyan → white.
 function getWordmark() {
   const L = {
@@ -222,6 +232,41 @@ export function renderStatusBar() {
 // ─────────────────────────────────────────────
 // Markdown-ish Terminal Formatting
 // ─────────────────────────────────────────────
+// Render a markdown table block (rows of "| a | b |") as an aligned box-drawing table.
+function formatTable(rows) {
+  const clean = (c) => String(c).replace(/\*\*/g, '').replace(/`/g, '').trim();
+  const cells = (row) => row.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map(clean);
+  const header = cells(rows[0]);
+  const body = rows.slice(2).map(cells);
+  const cols = header.length;
+  const w = [];
+  for (let c = 0; c < cols; c++) w[c] = Math.max(header[c]?.length || 0, ...body.map(r => (r[c] || '').length), 1);
+  const pad = (s, i) => (s || '').padEnd(w[i]);
+  const rule = (l, m, r) => COLORS.dim(l + w.map(x => '─'.repeat(x + 2)).join(m) + r);
+  const out = [rule('┌', '┬', '┐')];
+  out.push(COLORS.dim('│ ') + header.map((h, i) => COLORS.bright.bold(pad(h, i))).join(COLORS.dim(' │ ')) + COLORS.dim(' │'));
+  out.push(rule('├', '┼', '┤'));
+  for (const r of body) out.push(COLORS.dim('│ ') + w.map((_, i) => COLORS.text(pad(r[i], i))).join(COLORS.dim(' │ ')) + COLORS.dim(' │'));
+  out.push(rule('└', '┴', '┘'));
+  return out.join('\n');
+}
+
+// Find markdown tables (a "| … |" row followed by a "|---|---|" separator) and pretty-print them.
+function renderTables(text) {
+  const lines = text.split('\n');
+  const out = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (/^\s*\|.*\|\s*$/.test(lines[i]) && i + 1 < lines.length && /^\s*\|[\s:|-]+\|\s*$/.test(lines[i + 1])) {
+      const rows = [];
+      let j = i;
+      while (j < lines.length && /^\s*\|.*\|\s*$/.test(lines[j])) rows.push(lines[j++]);
+      out.push(formatTable(rows));
+      i = j - 1;
+    } else out.push(lines[i]);
+  }
+  return out.join('\n');
+}
+
 function formatMarkdownTerminal(text) {
   let result = text;
 
@@ -231,6 +276,9 @@ function formatMarkdownTerminal(text) {
     const codeLines = code.split('\n').map(l => COLORS.secondary('  ' + l)).join('\n');
     return (header ? header + '\n' : '') + codeLines;
   });
+
+  // Tables (after code blocks so code-fence pipes aren't mistaken for tables)
+  result = renderTables(result);
 
   // Inline code
   result = result.replace(/`([^`]+)`/g, (_, code) => COLORS.secondary(code));
@@ -338,8 +386,8 @@ export class Spinner {
     this.interval = setInterval(() => {
       clearLine();
       const frame = SPINNER_FRAMES[this.frameIndex % SPINNER_FRAMES.length];
-      const secs = Math.floor((Date.now() - this.startTime) / 1000); // real-time elapsed
-      process.stdout.write(COLORS.primary(`  ${frame} `) + COLORS.muted(this.text) + COLORS.dim(`  ${secs}s`));
+      const secs = (Date.now() - this.startTime) / 1000; // real-time elapsed
+      process.stdout.write(COLORS.primary(`  ${frame} `) + COLORS.muted(this.text) + COLORS.dim(`  ${fmtDuration(secs)}`));
       this.frameIndex++;
     }, 80);
   }

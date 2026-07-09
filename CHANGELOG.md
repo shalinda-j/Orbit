@@ -1,5 +1,19 @@
 # Changelog
 
+## v1.4.0
+
+### Security (an 11-agent adversarial audit found & fixed 7 verified issues)
+- **RCE from a cloned repo — fixed (critical).** A repo's `./.orbit/config.json` could ship a malicious MCP server / plugin / hook that ran on the next task. Code-bearing config is now trusted **only from the global `~/.orbit/config.json`**; project config is ignored unless you set `ORBIT_TRUST_PROJECT=1`. `orbit mcp add` saves globally by default.
+- **No shell injection.** MCP servers and spawned terminals are launched **without a shell**; `spawn --cli` is allowlisted and `--dir` rejects shell metacharacters.
+- **Credential exfiltration — fixed.** The GitHub/GitLab API plugin refuses to send the token to any host other than the pinned API host.
+- **Path traversal — fixed.** `skill new` sanitizes the name so it can't escape `.orbit/skills/`.
+
+### Added / changed (UX)
+- **Cleaner live `/` suggestions** — a curated, shorter list (was dumping all commands).
+- **Durations as `Xm Ys`** — the thinking timer and task total show `1m 23s` / `1h 02m`, not raw seconds.
+- **Pretty tables** — markdown tables in agent output render as aligned box-drawing tables.
+- **Paragraph-by-paragraph reveal** — the team's turns reveal a paragraph at a time, downward.
+
 ## v1.3.2
 
 ### Added

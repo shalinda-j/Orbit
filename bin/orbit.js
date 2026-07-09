@@ -18,7 +18,7 @@ import {
   renderBanner, renderAgentResponse, renderSystemMessage,
   renderPrompt, renderStatusBar, renderHelp, renderAgentList,
   renderTokenSummary, renderFinalResult, renderTaskHeader,
-  handleOf, agentResponseLines, renderRoster, renderEdit, Spinner,
+  handleOf, agentResponseLines, renderRoster, renderEdit, fmtDuration, Spinner,
 } from '../src/tui.js';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -280,17 +280,18 @@ async function main() {
     clearSuggestBelow();
     const line = rl.line || '';
     if (!line.startsWith('/') || line.includes(' ')) return;
-    const hits = SLASH.filter(c => c.startsWith(line.toLowerCase()));
-    if (!hits.length) return;
-    const width = (O.columns || 80) - 4;
-    let text = '', n = 0;
-    for (const h of hits) { if (text.length + h.length + 2 > width) break; text += (text ? '  ' : '') + h; n++; }
-    if (n < hits.length) text += `  +${hits.length - n}`;
+    // Bare "/" → a short curated list (avoid dumping all 30). Otherwise, the matches (capped).
+    const COMMON = ['/help', '/connect', '/mode', '/effort', '/board', '/brain', '/exit'];
+    const all = SLASH.filter(c => c.startsWith(line.toLowerCase()));
+    if (!all.length) return;
+    const hits = (line === '/' ? COMMON : all).slice(0, 8);
+    const more = all.length - hits.length;
+    const text = hits.map(h => COLORS.secondary(h)).join(COLORS.dim('  ')) + (more > 0 ? COLORS.dim(`  +${more}`) : '') + COLORS.dim('   · Tab');
     try {
       O.write('\n');
       readline.cursorTo(O, 0);
       readline.clearLine(O, 0);
-      O.write(COLORS.dim('  ' + text));
+      O.write('  ' + text);
       readline.moveCursor(O, 0, -1);   // relative: back up to the input row (survives scroll)
       readline.cursorTo(O, pos.cols);  // restore the column
       suggestShown = true;
@@ -456,12 +457,14 @@ async function main() {
           console.log('');
           return;
         }
-        // Animate the team member's turn: reveal line by line, @handles highlighted.
+        // Animate the team member's turn: reveal paragraph by paragraph, downward.
         const agent = agents.find(a => a.name === agentName);
         const lines = agentResponseLines(agentName, agent?.model || '', text, usage, teamNames);
         for (let i = 0; i < lines.length; i++) {
           console.log(lines[i]);
-          if (animate() && i > 0 && i < 40) await sleep(12); // fast reveal, capped for long messages
+          if (!animate()) continue;
+          const bare = lines[i].replace(/\x1b\[[0-9;]*m/g, '').trim();
+          if ((bare === '│' || bare === '└') && i < lines.length - 1) await sleep(160); // pause at each paragraph break
         }
         console.log('');
       };
@@ -482,7 +485,7 @@ async function main() {
       if (!aborted()) {
         console.log(renderFinalResult(result.finalOutput));
         console.log(renderTokenSummary(result.tokenStats, { subscription }));
-        console.log(COLORS.dim(`  ⏱  ${Math.round((Date.now() - t0) / 1000)}s`));
+        console.log(COLORS.dim(`  ⏱  ${fmtDuration((Date.now() - t0) / 1000)}`));
       }
       accumulateTokens(result.tokenStats);
       rememberRun(trimmed, result.finalOutput); // save every run to the brain

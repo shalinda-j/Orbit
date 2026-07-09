@@ -24,6 +24,10 @@ fs.writeFileSync(path.join(tmp, '.orbit', 'config.json'), JSON.stringify({
 }, null, 2));
 
 process.chdir(tmp);
+// Project-level plugins/hooks/mcp are untrusted by default (RCE guard) — opt in to test them.
+process.env.ORBIT_TRUST_PROJECT = '1';
+process.env.HOME = path.join(tmp, 'home');
+process.env.USERPROFILE = process.env.HOME;
 
 const { extInit, extProviderNames, extDomains, extSkills, emit } = await import('../src/extensions.js');
 const { getProvider } = await import('../src/providers/index.js');

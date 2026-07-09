@@ -27,13 +27,20 @@ export function loadConfig() {
   if (_cache) return _cache;
   const g = readJson(globalConfigFile()) || {};
   const p = readJson(projectConfigFile()) || {};
+  // SECURITY: MCP servers, plugins, and hooks execute code. A cloned repo's ./.orbit/config.json
+  // is UNTRUSTED — auto-loading its servers/plugins/hooks would be remote code execution. So we
+  // trust only the GLOBAL (~/.orbit) config by default; project entries require an explicit opt-in.
+  const trustProject = process.env.ORBIT_TRUST_PROJECT === '1' || process.env.ORBIT_TRUST_PROJECT_MCP === '1';
+  const proj = trustProject ? p : {};
   _cache = {
-    providers: [...(g.providers || []), ...(p.providers || [])],       // manual OpenAI-compatible providers
-    plugins: [...(g.plugins || []), ...(p.plugins || [])],             // module paths/specs to load
-    mcp: { servers: [...(g.mcp?.servers || []), ...(p.mcp?.servers || [])] },
-    hooks: mergeHooks(g.hooks, p.hooks),                              // { event: [shell commands] }
+    providers: [...(g.providers || []), ...(p.providers || [])],       // providers are data (base URL + key), not code — safe to merge
+    plugins: [...(g.plugins || []), ...(proj.plugins || [])],           // code — global only unless opted in
+    mcp: { servers: [...(g.mcp?.servers || []), ...(proj.mcp?.servers || [])] }, // spawns processes — global only unless opted in
+    hooks: mergeHooks(g.hooks, trustProject ? p.hooks : {}),            // shell commands — global only unless opted in
     integrations: { ...(g.integrations || {}), ...(p.integrations || {}) },
-    skills: [...(g.skills || []), ...(p.skills || [])],
+    skills: [...(g.skills || []), ...(p.skills || [])],                 // instruction text — data, safe
+    _projectHasCode: !!(p.mcp?.servers?.length || p.plugins?.length || Object.keys(p.hooks || {}).length),
+    _trustProject: trustProject,
   };
   return _cache;
 }
@@ -43,6 +50,23 @@ export function invalidateConfig() { _cache = null; }
 // Append an item to an array field of the PROJECT config (providers/plugins/skills), or set mcp.servers.
 export function addToProjectConfig(field, item) {
   const f = projectConfigFile();
+  fs.mkdirSync(path.dirname(f), { recursive: true });
+  const cur = readJson(f) || {};
+  if (field === 'mcp.servers') {
+    cur.mcp = cur.mcp || {};
+    cur.mcp.servers = [...(cur.mcp.servers || []), item];
+  } else {
+    cur[field] = [...(cur[field] || []), item];
+  }
+  fs.writeFileSync(f, JSON.stringify(cur, null, 2));
+  invalidateConfig();
+  return f;
+}
+
+// Append an item to an array field of the GLOBAL config (~/.orbit/config.json).
+// Code-bearing config (mcp servers, plugins, hooks) should live here — it's trusted everywhere.
+export function addToGlobalConfig(field, item) {
+  const f = globalConfigFile();
   fs.mkdirSync(path.dirname(f), { recursive: true });
   const cur = readJson(f) || {};
   if (field === 'mcp.servers') {

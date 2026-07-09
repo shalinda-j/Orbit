@@ -1,4 +1,4 @@
-import { spawn } from 'child_process';
+import { spawn, spawnSync } from 'child_process';
 import { loadConfig } from './orbitconfig.js';
 
 // ─────────────────────────────────────────────
@@ -6,14 +6,26 @@ import { loadConfig } from './orbitconfig.js';
 // Shared by the `mcp` domain (manual use) and the agent tool-loop bridge.
 // ─────────────────────────────────────────────
 
+// Launch an MCP server WITHOUT a shell — `command` is treated as an executable, never a shell
+// string, so metacharacters can't inject. On Windows we resolve .cmd/.bat shims (npx) explicitly.
+function launch(command, args) {
+  const opts = { stdio: ['pipe', 'pipe', 'inherit'], windowsHide: true };
+  if (process.platform !== 'win32') return spawn(command, args, { ...opts, shell: false });
+  // Resolve via `where` — this also validates the command is a real executable, not a shell string.
+  let resolved = command;
+  try {
+    const r = spawnSync('where', [command], { encoding: 'utf8' });
+    if (r.status === 0) resolved = r.stdout.split(/\r?\n/).find(Boolean) || command;
+  } catch { /* fall through */ }
+  if (/\.(cmd|bat)$/i.test(resolved)) {
+    // Batch shims must run via cmd.exe; Node quotes each arg (windowsVerbatimArguments:false) — no shell:true.
+    return spawn(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', resolved, ...args], { ...opts, shell: false });
+  }
+  return spawn(resolved, args, { ...opts, shell: false });
+}
+
 export function connect(server) {
-  // shell:true lets Windows resolve .cmd shims (npx.cmd), but Node won't quote args for the shell,
-  // so quote any arg with whitespace ourselves — otherwise "C:\Program Files\x" splits into two args.
-  const rawArgs = server.args || [];
-  const args = process.platform === 'win32'
-    ? rawArgs.map(a => (/\s/.test(a) && !/^".*"$/.test(a)) ? `"${a}"` : a)
-    : rawArgs;
-  const child = spawn(server.command, args, { shell: true, stdio: ['pipe', 'pipe', 'inherit'] });
+  const child = launch(server.command, server.args || []);
   const pending = new Map();
   let n = 0, buf = '';
 

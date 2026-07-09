@@ -61,9 +61,11 @@ export default {
     new: {
       desc: 'skill new <name> "instructions..." [--desc "..."] — create a markdown skill',
       run: async (args, ctx) => {
-        const name = args._[0];
+        const rawName = args._[0];
         const instructions = args._[1];
-        if (!name || !instructions) throw new Error('usage: skill new <name> "instructions..." [--desc "..."]');
+        if (!rawName || !instructions) throw new Error('usage: skill new <name> "instructions..." [--desc "..."]');
+        // SECURITY: sanitize the name so it can't traverse out of skillsDir() (e.g. "../../foo").
+        const name = String(rawName).replace(/[^\w.\-]+/g, '-').replace(/^[.\-]+/, '') || 'skill';
         fs.mkdirSync(skillsDir(), { recursive: true });
         const file = path.join(skillsDir(), `${name}.md`);
         // Write in the exact shape parseMd reads: a leading "description:" line (only when given), then the body.

@@ -11,6 +11,7 @@ fs.rmSync(tmp, { recursive: true, force: true });
 fs.mkdirSync(path.join(tmp, '.orbit'), { recursive: true });
 fs.writeFileSync(path.join(tmp, '.orbit', 'config.json'), JSON.stringify({ mcp: { servers: [{ name: 'echo', command: 'node', args: [fixture] }] } }));
 process.chdir(tmp);
+process.env.ORBIT_TRUST_PROJECT = '1'; // project MCP servers are untrusted by default (RCE guard) — opt in for the test
 
 const { discoverTools, callTool } = await import('../src/mcpclient.js');
 const { Orchestrator } = await import('../src/orchestrator.js');

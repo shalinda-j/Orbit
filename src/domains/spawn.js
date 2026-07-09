@@ -1,4 +1,5 @@
 import { spawn } from 'child_process';
+import path from 'path';
 import { withStore, readStore, nextId, logEvent } from '../store.js';
 
 // Which shell command launches each coding CLI as a team member.
@@ -38,8 +39,12 @@ export default {
       run: async (a, ctx) => {
         const role = a.role || a._[0];
         if (!role) throw new Error('need --role');
-        const cli = (a.cli || 'claude').toLowerCase();
-        const dir = a.dir || ctx.cwd;
+        // SECURITY: the terminal command is built into a shell string, so cli & dir must be safe.
+        // cli must be an allowlisted key (its value is trusted); dir must contain no shell metacharacters.
+        const cli = String(a.cli || 'claude').toLowerCase();
+        if (!(cli in CLI_COMMANDS)) throw new Error(`unknown --cli "${cli}". Allowed: ${Object.keys(CLI_COMMANDS).join(', ')} (add your own via the CLI_COMMANDS env)`);
+        const dir = path.resolve(a.dir || ctx.cwd);
+        if (/["'`$&|;<>(){}\r\n]/.test(dir)) throw new Error('--dir contains unsafe characters');
 
         // With shell:true the shell always spawns; a missing terminal (no `wt`) fails ASYNC via
         // the shell's exit code / 'error' event — never a sync throw. Report the real outcome.
