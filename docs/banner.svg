@@ -25,7 +25,7 @@
   <text x="500" y="205" text-anchor="middle" font-size="132" font-weight="800" letter-spacing="10" fill="url(#orbit)">ORBIT</text>
 
   <!-- taglines -->
-  <text x="500" y="252" text-anchor="middle" font-size="17" fill="#8a8a93">Multi-Agent Team · Multi-Provider · v1.4.1</text>
+  <text x="500" y="252" text-anchor="middle" font-size="17" fill="#8a8a93">Multi-Agent Team · Multi-Provider · v1.5.0</text>
   <text x="500" y="278" text-anchor="middle" font-size="14" fill="#4b4b52">Different models on different agents, working as one team.</text>
 
   <!-- status block -->

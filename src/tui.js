@@ -319,7 +319,8 @@ export function renderHelp() {
     row('/anim', 'Toggle team conversation animation'),
     row('/tokens N', 'Cap output tokens per turn'),
     row('/turns N', 'Set max collaboration turns'),
-    row('/model [name]', 'View or set the NVIDIA model'),
+    row('/model [prov] M', 'View or set a provider’s model (/model M = preferred)'),
+    row('/last', 'Show the last run recalled from memory'),
     row('/clear', 'Clear the screen'),
     row('/exit', 'Exit Orbit'),
     '',
@@ -408,14 +409,47 @@ export class Spinner {
 // ─────────────────────────────────────────────
 // Token Summary — compact one-liner (+ per-agent breakdown)
 // ─────────────────────────────────────────────
+// Rough per-provider pricing (USD per 1M tokens, [input, output]). Estimates only — real prices
+// vary by exact model and change often; override intent is "ballpark", not billing.
+const PRICES = {
+  openai: [2.5, 10], anthropic: [3, 15], gemini: [0.15, 0.6], nvidia: [0, 0],
+  openrouter: [1, 3], groq: [0.1, 0.3], deepseek: [0.14, 0.28], together: [0.9, 0.9],
+  mistral: [2, 6], xai: [2, 10], fireworks: [0.9, 0.9],
+  qwen: [0.4, 1.2], zhipu: [0.5, 1.5], kimi: [0.6, 2], moonshot: [0.6, 2], minimax: [0.2, 1.1],
+  yi: [0.8, 0.8], baichuan: [0.5, 1.5], hunyuan: [0.5, 1.5], doubao: [0.3, 0.6], stepfun: [0.5, 1.5],
+  sensenova: [0.5, 1.5], spark: [0.5, 1.5], siliconflow: [0.3, 0.6],
+};
+const FREE_PROVIDERS = new Set(['claude-code', 'ollama', 'custom']); // subscription / local / unknown-endpoint
+const DEFAULT_PRICE = [1, 3];
+
+// Estimate cost by pricing each agent's tokens with ITS provider's rate (not one flat rate).
+function estimateCost(breakdown) {
+  let usd = 0, priced = false, hadFree = false, unknown = false;
+  for (const s of Object.values(breakdown || {})) {
+    if (!s.provider) { unknown = true; continue; }
+    if (FREE_PROVIDERS.has(s.provider)) { hadFree = true; continue; }
+    const [pin, pout] = PRICES[s.provider] || DEFAULT_PRICE;
+    usd += (s.promptTokens / 1e6) * pin + (s.completionTokens / 1e6) * pout;
+    priced = true;
+  }
+  return { usd, priced, hadFree, unknown };
+}
+
 export function renderTokenSummary(tokenStats, opts = {}) {
   const { subscription = false } = opts;
   const t = tokenStats;
 
-  // Under a subscription there is no per-token dollar cost — don't invent one.
-  const cost = subscription
-    ? COLORS.secondary('subscription · no API cost')
-    : COLORS.success('~$' + (((t.promptTokens / 1e6) * 1.5) + ((t.completionTokens / 1e6) * 6)).toFixed(4));
+  // Price each provider's share separately. Fall back to a blended estimate only when we have
+  // no per-agent provider info (e.g. an old caller), and defer to "subscription" when it's the only signal.
+  const est = estimateCost(t.breakdown);
+  let cost;
+  if (est.priced) {
+    cost = COLORS.success('~$' + est.usd.toFixed(4)) + COLORS.dim(' est.' + (est.hadFree ? ' · +subscription/local free' : ''));
+  } else if (est.hadFree || subscription) {
+    cost = COLORS.secondary('subscription / local · no API cost');
+  } else {
+    cost = COLORS.success('~$' + (((t.promptTokens / 1e6) * 1.5) + ((t.completionTokens / 1e6) * 6)).toFixed(4)) + COLORS.dim(' est.');
+  }
 
   const head = '  ' +
     COLORS.muted('↑ ') + COLORS.text(t.promptTokens.toLocaleString()) + '   ' +

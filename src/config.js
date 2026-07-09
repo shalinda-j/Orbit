@@ -67,6 +67,9 @@ config.animate = process.env.ORBIT_ANIM !== '0'; // animate the team conversatio
 export const EFFORT_TURNS = { low: 2, medium: 4, high: 6, max: 10 };
 config.effort = EFFORT_TURNS[process.env.ORBIT_EFFORT] ? process.env.ORBIT_EFFORT : 'medium';
 config.useProviders = []; // when non-empty, restrict runs to this subset of providers (multi-model select)
+// Providers the user has explicitly turned off — even keyless ones (claude-code, ollama) that are
+// otherwise always "configured". Lets `/disconnect claude-code` actually take effect.
+config.disabled = String(process.env.ORBIT_DISABLED_PROVIDERS || '').split(/[\s,]+/).filter(Boolean);
 
 // Effective output-token cap for a call. Lazy "lazy" mode tightens it hard to slash token spend.
 export function maxTokens() {
@@ -94,6 +97,7 @@ function claudeCodeAvailable() {
 
 // Check if provider is configured
 export function isProviderConfigured(providerName) {
+  if (config.disabled.includes(providerName)) return false; // explicitly turned off by the user
   const prov = config.providers[providerName];
   if (!prov) return false;
   if (providerName === 'ollama') return true;            // local, doesn't strictly need a key
@@ -162,4 +166,18 @@ export function clearProviderConfig(name) {
   if (!p) return;
   p.apiKey = '';
   if (name === 'custom') p.baseUrl = '';
+}
+
+export function isProviderDisabled(name) {
+  return config.disabled.includes(name);
+}
+
+// Turn a provider off (or back on) and persist the choice to ~/.orbit/.env. Works for keyless
+// providers (claude-code, ollama) that can't be disconnected by removing a key.
+export function setProviderDisabled(name, disabled) {
+  const set = new Set(config.disabled);
+  if (disabled) set.add(name); else set.delete(name);
+  config.disabled = [...set];
+  if (config.disabled.length) setGlobalEnv('ORBIT_DISABLED_PROVIDERS', config.disabled.join(','));
+  else removeGlobalEnv('ORBIT_DISABLED_PROVIDERS');
 }

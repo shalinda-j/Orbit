@@ -1,4 +1,5 @@
 import { config, maxTokens } from '../config.js';
+import { postJSON } from './http.js';
 
 /**
  * Generic OpenAI-compatible provider.
@@ -13,7 +14,7 @@ export class CustomProvider {
     this.defaultModel = config.providers.custom.defaultModel;
   }
 
-  async chat({ systemPrompt, messages, model, temperature = 0.7 }) {
+  async chat({ systemPrompt, messages, model, temperature = 0.7, signal }) {
     // 'default' is the sentinel the team generator emits — resolve it to the configured model.
     const selectedModel = (model && model !== 'default') ? model : this.defaultModel;
 
@@ -40,37 +41,22 @@ export class CustomProvider {
     const headers = { 'Content-Type': 'application/json' };
     if (this.apiKey) headers['Authorization'] = `Bearer ${this.apiKey}`; // local endpoints often need no key
 
-    try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          model: selectedModel,
-          messages: formattedMessages,
-          temperature,
-          max_tokens: maxTokens(),
-        }),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Custom API error (${response.status}): ${errorText}`);
+    const data = await postJSON(url, {
+      name: 'custom',
+      headers,
+      body: { model: selectedModel, messages: formattedMessages, temperature, max_tokens: maxTokens() },
+      signal,
+    });
+    const msg = data.choices && data.choices[0] && data.choices[0].message;
+    if (!msg) throw new Error(`Unexpected response format from custom provider: ${JSON.stringify(data).slice(0, 200)}`);
+    const finish = data.choices[0].finish_reason;
+    return {
+      content: msg.content ?? (finish === 'content_filter' ? '[content filtered by provider]' : ''),
+      usage: {
+        promptTokens: data.usage?.prompt_tokens || 0,
+        completionTokens: data.usage?.completion_tokens || 0,
+        totalTokens: data.usage?.total_tokens || 0
       }
-
-      const data = await response.json();
-      if (data.choices && data.choices[0] && data.choices[0].message) {
-        return {
-          content: data.choices[0].message.content,
-          usage: {
-            promptTokens: data.usage?.prompt_tokens || 0,
-            completionTokens: data.usage?.completion_tokens || 0,
-            totalTokens: data.usage?.total_tokens || 0
-          }
-        };
-      }
-      throw new Error(`Unexpected response format from custom provider: ${JSON.stringify(data)}`);
-    } catch (error) {
-      throw new Error(`Failed to call custom provider at ${this.baseUrl}: ${error.message}`);
-    }
+    };
   }
 }

@@ -29,11 +29,18 @@ export function connect(server) {
   const pending = new Map();
   let n = 0, buf = '';
 
+  const MAX_BUF = 16 * 1024 * 1024; // cap buffered stdout so a malformed/hostile server can't OOM us
   const failAll = (e) => { for (const { reject } of pending.values()) reject(e); pending.clear(); };
   child.on('error', failAll);
   child.on('exit', () => failAll(new Error('mcp server exited')));
   child.stdout.on('data', (chunk) => {
     buf += chunk;
+    if (buf.length > MAX_BUF) { // no newline in 16 MB — treat as a runaway server, don't grow unbounded
+      buf = '';
+      failAll(new Error('mcp server output exceeded 16 MB without a complete message'));
+      try { child.kill(); } catch { /* gone */ }
+      return;
+    }
     let i;
     while ((i = buf.indexOf('\n')) >= 0) {
       const line = buf.slice(0, i).trim();

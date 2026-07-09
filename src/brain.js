@@ -21,6 +21,30 @@ function toList(tags) {
   return String(tags || '').split(/[\s,]+/).filter(Boolean);
 }
 
+// Mask anything that looks like an API key / token before it's written to a plaintext brain note.
+// The brain is greppable, git-friendly, and re-injected into future runs, so a key an agent echoed
+// (or read out of a .env) must not persist. Known key prefixes + labelled key=value pairs.
+const SECRET_PATTERNS = [
+  /\bsk-[A-Za-z0-9_-]{16,}/g,          // OpenAI / Anthropic / OpenRouter
+  /\bnvapi-[A-Za-z0-9_-]{16,}/g,       // NVIDIA
+  /\bgh[posru]_[A-Za-z0-9]{20,}/g,     // GitHub tokens
+  /\bglpat-[A-Za-z0-9_-]{16,}/g,       // GitLab PAT
+  /\bAKIA[0-9A-Z]{12,}/g,              // AWS access key id
+  /\bxox[baprs]-[A-Za-z0-9-]{10,}/g,   // Slack
+  /\bAIza[0-9A-Za-z_-]{20,}/g,         // Google
+];
+const mask = (v) => (v.length <= 8 ? '***' : v.slice(0, 4) + '…[redacted]');
+export function scrubSecrets(text) {
+  let s = String(text ?? '');
+  for (const re of SECRET_PATTERNS) s = s.replace(re, mask);
+  // Labelled secrets: api_key=…, "authorization": "Bearer …", token: …
+  s = s.replace(
+    /\b(api[_-]?key|apikey|token|secret|password|authorization|bearer)\b(\s*[:=]\s*|\s+)(["']?)([A-Za-z0-9_\-.]{12,})\3/gi,
+    (_m, k, sep, q, val) => `${k}${sep}${q}${mask(val)}${q}`
+  );
+  return s;
+}
+
 function parse(file) {
   const raw = fs.readFileSync(file, 'utf8');
   const m = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/); // CRLF-tolerant (Windows/Notepad/git autocrlf)
@@ -65,7 +89,7 @@ export function brainSave({ title, content, category = '', tags = '' }) {
     '',
     '',
   ].join('\n');
-  fs.writeFileSync(file, fm + (content || ''), 'utf8');
+  fs.writeFileSync(file, fm + scrubSecrets(content || ''), 'utf8');
   return { slug, file };
 }
 

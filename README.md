@@ -8,7 +8,7 @@
 Put different models on different agents and let them plan, build, review, and communicate as one team — coordinating through a shared task board, channel, and persistent brain.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-8A2BE2.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.4.1-67E8F9.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.5.0-67E8F9.svg)](CHANGELOG.md)
 [![Node](https://img.shields.io/badge/node-%3E%3D18-34D399.svg)](https://nodejs.org)
 [![Providers](https://img.shields.io/badge/providers-28-A78BFA.svg)](#providers)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](#contributing)
@@ -133,7 +133,9 @@ Like Claude Code, the TUI has modes (shown in the prompt). Cycle with `/mode`, o
 
 `/skip` toggles **permissions** (`safe` read-only ↔ `auto` may write files & run commands) · `/style` toggles collaborative ↔ sequential · `/turns N` sets max turns.
 
-**More controls:** `/effort low|medium|high|max` sets how hard the team works (deeper = more turns + more deliberation) · `/use groq,deepseek` restricts a run to specific providers (multi-model select; blank clears) · `/disconnect <provider>` removes a key. A live **timer** shows how long each agent has been thinking and how long the whole task took.
+**More controls:** `/effort low|medium|high|max` sets how hard the team works (deeper = more turns + more deliberation) · `/use groq,deepseek` restricts a run to specific providers (multi-model select; blank clears) · `/model <provider> <model>` sets any provider's model · `/disconnect <provider>` turns one off (even keyless ones like claude-code) · `/last` recalls the previous run. A live **timer** shows how long each agent has been thinking, and **Ctrl+C** aborts a running task's model calls.
+
+**Scripting:** `orbit -p "build X"` (or `echo "build X" | orbit`) runs the team once, prints the result, and exits — for CI and pipelines. `orbit --version` prints the version.
 
 ### Sub-agents & memory
 
@@ -184,10 +186,11 @@ Orbit is configured through `./.orbit/config.json` (plus a global `~/.orbit/conf
 Orbit runs LLM-driven tools and spawns processes, so it treats untrusted input carefully:
 
 - **A cloned repo can't run code on you.** Code-bearing config (MCP servers, plugins, hooks) is trusted **only from your global `~/.orbit/config.json`** — a repo's `./.orbit/config.json` is **ignored by default**. Opt in per repo you trust with `ORBIT_TRUST_PROJECT=1`.
-- **No shell injection.** MCP servers and spawned CLIs are launched without a shell; `spawn`'s `--cli` is allowlisted and `--dir` is rejected if it contains shell metacharacters.
-- **Credentials stay put.** The GitHub/GitLab API plugin refuses to send your token to any host other than the pinned API host.
-- **No path traversal.** File names from args (skills, backups, brain notes) are sanitized to stay inside `.orbit/`.
-- **`plan`/`safe` modes** block file writes and command execution entirely.
+- **Agent file tools stay in the project.** `view_file`/`write_file`/`list_dir` reject `../` traversal and absolute paths, and honor **`.orbitignore`** — `.env`, `.git`, `node_modules`, and `.orbit/` are protected by default, so a steered agent can't read your keys or write outside the workspace. Writes snapshot the prior version to `.orbit/undo/`.
+- **`run_command` is gated.** A variant-aware danger check blocks `rm -rf /` (and `/*`), `mkfs`, `dd` to a raw disk, fork bombs, `curl … | sh`, encoded PowerShell, etc.; output is capped and stdin closed. Command output fed back to agents is framed as untrusted data (prompt-injection resistant).
+- **No shell injection.** MCP servers, the Claude Code CLI, and spawned CLIs are launched without a shell; `spawn`'s `--cli` is allowlisted and `--dir` is rejected if it contains shell metacharacters.
+- **Secrets stay put.** API keys are scrubbed before anything is written to the brain; tool/provider errors are redacted of local paths; the GitHub/GitLab plugin only sends your token to the pinned API host; the Gemini key rides in a header, not the URL.
+- **`plan`/`safe` modes** block file writes and command execution entirely, and **Ctrl+C aborts in-flight model calls**.
 
 Found something? Please open a security issue.
 
@@ -196,8 +199,10 @@ Found something? Please open a security issue.
 ## Development
 
 ```bash
-npm test        # 14 test suites, all offline (providers mocked) — no network, no keys
+npm test        # 17 test suites, all offline (providers mocked) — no network, no keys
 ```
+
+CI runs the suite on Ubuntu + Windows across Node 18/20/22 on every push and PR.
 
 ---
 

@@ -1,4 +1,5 @@
 import { config, maxTokens } from '../config.js';
+import { postJSON } from './http.js';
 
 export class NvidiaProvider {
   constructor() {
@@ -19,7 +20,7 @@ export class NvidiaProvider {
     return NvidiaProvider.MODELS[shortName?.toLowerCase()] || shortName;
   }
 
-  async chat({ systemPrompt, messages, model, temperature = 0.7 }) {
+  async chat({ systemPrompt, messages, model, temperature = 0.7, signal }) {
     let selectedModel = model || this.defaultModel;
 
     // Allow short-hand model names (e.g., 'nemotron', 'kimi', 'deepseek', 'glm')
@@ -52,37 +53,23 @@ export class NvidiaProvider {
       max_tokens: maxTokens(),
     };
 
-    try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.apiKey}`,
-        },
-        body: JSON.stringify(body),
-      });
+    const data = await postJSON(url, {
+      name: 'NVIDIA',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${this.apiKey}` },
+      body,
+      signal,
+    });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`NVIDIA API error (${response.status}): ${errorText}`);
+    const msg = data.choices && data.choices[0] && data.choices[0].message;
+    if (!msg) throw new Error(`Unexpected NVIDIA response format: ${JSON.stringify(data).slice(0, 200)}`);
+    const finish = data.choices[0].finish_reason;
+    return {
+      content: msg.content ?? (finish === 'content_filter' ? '[content filtered by provider]' : ''),
+      usage: {
+        promptTokens: data.usage?.prompt_tokens || 0,
+        completionTokens: data.usage?.completion_tokens || 0,
+        totalTokens: data.usage?.total_tokens || 0
       }
-
-      const data = await response.json();
-
-      if (data.choices && data.choices[0] && data.choices[0].message) {
-        return {
-          content: data.choices[0].message.content,
-          usage: {
-            promptTokens: data.usage?.prompt_tokens || 0,
-            completionTokens: data.usage?.completion_tokens || 0,
-            totalTokens: data.usage?.total_tokens || 0
-          }
-        };
-      } else {
-        throw new Error(`Unexpected NVIDIA response format: ${JSON.stringify(data)}`);
-      }
-    } catch (error) {
-      throw new Error(`Failed to call NVIDIA provider: ${error.message}`);
-    }
+    };
   }
 }

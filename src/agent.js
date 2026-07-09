@@ -70,7 +70,8 @@ The system runs it and returns [Tool Output]; then you continue.`;
       systemPrompt,
       messages,
       model: this.model,
-      temperature: options.temperature ?? 0.7
+      temperature: options.temperature ?? 0.7,
+      signal: options.signal,
     });
   }
 }

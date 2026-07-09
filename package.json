@@ -1,6 +1,6 @@
 {
   "name": "orbit-ai",
-  "version": "1.4.1",
+  "version": "1.5.0",
   "description": "Orbit — Multi-Agent, Multi-Provider AI team CLI (task board, brain, MCP, plugins)",
   "main": "bin/orbit.js",
   "bin": {
@@ -14,7 +14,9 @@
     "plugins/",
     "examples/",
     ".env.example",
-    "README.md"
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
   ],
   "engines": {
     "node": ">=18"
@@ -27,7 +29,8 @@
   "homepage": "https://github.com/shalinda-j/Orbit",
   "scripts": {
     "start": "node bin/orbit.js",
-    "test": "node tests/test.js && node tests/test-team.js && node tests/test-claudecode.js && node tests/test-providers.js && node tests/test-extensions.js && node tests/test-mcp.js && node tests/test-e2e-team.js && node tests/test-bugfixes.js && node tests/test-tokens.js && node tests/test-ui.js && node tests/test-connect.js && node tests/test-features.js && node tests/test-security.js && node tests/test-dispatch.js"
+    "test": "node tests/test.js && node tests/test-team.js && node tests/test-claudecode.js && node tests/test-providers.js && node tests/test-extensions.js && node tests/test-mcp.js && node tests/test-e2e-team.js && node tests/test-bugfixes.js && node tests/test-tokens.js && node tests/test-ui.js && node tests/test-connect.js && node tests/test-features.js && node tests/test-security.js && node tests/test-dispatch.js && node tests/test-hardening.js",
+    "prepublishOnly": "npm test"
   },
   "keywords": ["ai", "cli", "agents", "multi-agent", "llm", "mcp", "claude", "openai", "orbit"],
   "author": "Shalinda Jayasinghe",

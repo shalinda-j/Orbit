@@ -1,9 +1,119 @@
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 
 const execAsync = promisify(exec);
+
+// ── Security helpers ─────────────────────────────────────────────
+// Contain a tool path to the working directory: resolve it, then verify it stays
+// inside cwd. Rejects '../' traversal and absolute paths (C:\..., /root/.ssh, ~).
+// This is the trust boundary — an LLM-steered agent must not read/write outside the project.
+export function containedPath(relPath) {
+  if (relPath == null || relPath === '') return { ok: false, reason: 'no path given' };
+  const root = path.resolve(process.cwd());
+  const full = path.resolve(root, String(relPath));
+  const rel = path.relative(root, full);
+  // Outside cwd when the relative path climbs out ('..') or is absolute (different drive on Windows).
+  if (rel === '' ) return { ok: true, full };            // cwd itself (list_dir '.')
+  if (rel.startsWith('..') || path.isAbsolute(rel)) {
+    return { ok: false, reason: `path escapes the working directory: ${relPath}` };
+  }
+  return { ok: true, full };
+}
+
+// Files/dirs the agent tools must not touch: secrets and machinery, plus anything the user
+// lists in .orbitignore. Protects .env from being read into the brain, and keeps agents out of
+// node_modules / .git / .orbit. Patterns: a name (`.env`), a dir (`node_modules`), or `*.ext`.
+function loadIgnore() {
+  const patterns = ['.env', '.git', 'node_modules', '.orbit'];
+  try {
+    const f = path.join(process.cwd(), '.orbitignore');
+    if (fs.existsSync(f)) {
+      for (const l of fs.readFileSync(f, 'utf8').split(/\r?\n/)) {
+        const t = l.trim();
+        if (t && !t.startsWith('#')) patterns.push(t.replace(/[\\/]+$/, ''));
+      }
+    }
+  } catch { /* no ignore file */ }
+  return patterns;
+}
+export function isIgnored(rel) {
+  const norm = String(rel).replace(/\\/g, '/');
+  if (!norm || norm === '.') return false;
+  const first = norm.split('/')[0];
+  const base = norm.split('/').pop();
+  for (const raw of loadIgnore()) {
+    const pat = raw.replace(/\\/g, '/');
+    if (norm === pat || first === pat) return true;              // exact, or a top-level ignored dir/name
+    if (norm.startsWith(pat + '/')) return true;                 // inside an ignored path
+    if (pat.startsWith('*.') && base.endsWith(pat.slice(1))) return true; // *.log style
+    if (base === pat) return true;                               // bare filename anywhere
+  }
+  return false;
+}
+
+// Strip home/cwd absolute prefixes out of an error string so tool/provider errors
+// fed back to the model (and persisted to the brain) don't leak local filesystem layout.
+export function redact(msg) {
+  let s = String(msg == null ? '' : msg);
+  try {
+    const home = os.homedir();
+    if (home) s = s.split(home).join('~');
+    const cwd = process.cwd();
+    s = s.split(cwd).join('.');
+  } catch { /* best effort */ }
+  return s;
+}
+
+const MAX_TOOL_OUTPUT = 20000;   // cap what any tool returns to the model (context/token guard)
+const MAX_CMD_BUFFER = 1024 * 1024; // 1 MB stdout/stderr ceiling for run_command
+
+function clip(text, limit = MAX_TOOL_OUTPUT) {
+  const s = String(text ?? '');
+  if (s.length <= limit) return s;
+  return s.slice(0, limit) + `\n…[truncated ${s.length - limit} more chars]`;
+}
+
+// Snapshot a file's current contents before an agent overwrites it, so a bad edit is
+// recoverable from .orbit/undo/ (mirrors the relative path; keeps only the latest).
+// ponytail: latest-version-only snapshot; add a versioned trash if multi-undo is ever needed.
+function checkpoint(root, rel, full) {
+  try {
+    if (!fs.existsSync(full)) return; // nothing to back up (new file)
+    const dest = path.join(root, '.orbit', 'undo', rel);
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.copyFileSync(full, dest);
+  } catch { /* best effort — never block the write on a failed backup */ }
+}
+
+// Detect genuinely destructive commands (defense-in-depth, NOT a sandbox). Matches the
+// dangerous *shape* (whitespace-tolerant, variant-aware) instead of a few literal strings.
+// ponytail: this is a guard, not isolation — real safety would run commands in a container.
+const DANGER = [
+  /\bdel\s+\/[sq]/i,                    // del /s  del /q
+  /\brmdir\s+\/s/i,
+  /\bmkfs(\.\w+)?\b/i,                  // format a filesystem
+  /\bformat\s+[a-z]:/i,                 // format C:
+  /\bdd\s+.*\bof=\/dev\/(sd|nvme|disk|hd)/i, // dd to a raw disk
+  /\bshutdown\b|\breboot\b|\bhalt\b/i,
+  /:\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;\s*:/, // fork bomb :(){ :|:& };:
+  /\b(curl|wget)\b[^\n|]*\|\s*(sudo\s+)?(sh|bash|zsh)\b/i, // curl … | sh
+  /\bpowershell\b[^\n]*\s-(enc|e|encodedcommand)\b/i,      // encoded PowerShell payload
+  /\b(chmod|chown)\s+-R\s+.*\s\//i,
+  />\s*\/dev\/(sd|nvme|disk)/i,
+];
+
+function isDangerous(command) {
+  const c = String(command).toLowerCase();
+  // `rm` with a recursive+force flag aimed at a root/home/cwd/glob target — the classic catastrophe.
+  const hasRm = /\brm\b/.test(c);
+  const recursiveForce = /(-[a-z]*r[a-z]*f|-[a-z]*f[a-z]*r|-r\s+-f|-f\s+-r|--recursive|--force)/.test(c);
+  const rootTarget = /(^|\s)(\/|~|\.|\*)(\s|$|\*|\/)/.test(c); // '/', '/*', '~', '.', '*' (not a specific subdir)
+  if (hasRm && recursiveForce && rootTarget) return true;
+  return DANGER.some((re) => re.test(command));
+}
 
 export const BUILTIN_TOOLS = [
   {
@@ -11,21 +121,23 @@ export const BUILTIN_TOOLS = [
     description: 'Read the contents of a file. Optionally specify startLine and endLine (1-indexed).',
     parameters: ['path', 'startLine', 'endLine'],
     execute: async ({ path: filePath, startLine, endLine }) => {
-      const fullPath = path.resolve(process.cwd(), filePath);
-      if (!fs.existsSync(fullPath)) {
+      const c = containedPath(filePath);
+      if (!c.ok) return `Error: ${c.reason}`;
+      if (isIgnored(path.relative(process.cwd(), c.full))) return `Error: "${filePath}" is protected/ignored — access denied.`;
+      if (!fs.existsSync(c.full)) {
         return `Error: File not found at ${filePath}`;
       }
       try {
-        const content = fs.readFileSync(fullPath, 'utf8');
+        const content = fs.readFileSync(c.full, 'utf8');
         if (startLine || endLine) {
           const lines = content.split('\n');
           const start = startLine ? parseInt(startLine, 10) - 1 : 0;
           const end = endLine ? parseInt(endLine, 10) : lines.length;
-          return lines.slice(start, end).join('\n');
+          return clip(lines.slice(start, end).join('\n'));
         }
-        return content;
+        return clip(content);
       } catch (err) {
-        return `Error reading file: ${err.message}`;
+        return `Error reading file: ${redact(err.message)}`;
       }
     }
   },
@@ -36,13 +148,18 @@ export const BUILTIN_TOOLS = [
     execute: async ({ path: filePath, content }) => {
       // Refuse when no content was provided (e.g. a truncated tag) — never blank an existing file.
       if (content === undefined) return `Error: write_file needs content (none provided — the tool call may have been truncated). File left unchanged.`;
-      const fullPath = path.resolve(process.cwd(), filePath);
+      const c = containedPath(filePath);
+      if (!c.ok) return `Error: ${c.reason}`;
+      if (isIgnored(path.relative(process.cwd(), c.full))) return `Error: "${filePath}" is protected/ignored — refusing to write.`;
       try {
-        fs.mkdirSync(path.dirname(fullPath), { recursive: true });
-        fs.writeFileSync(fullPath, content || '', 'utf8');
+        const root = path.resolve(process.cwd());
+        const rel = path.relative(root, c.full);
+        checkpoint(root, rel, c.full); // snapshot prior contents → .orbit/undo/ for recovery
+        fs.mkdirSync(path.dirname(c.full), { recursive: true });
+        fs.writeFileSync(c.full, content || '', 'utf8');
         return `Success: Wrote file to ${filePath}`;
       } catch (err) {
-        return `Error writing file: ${err.message}`;
+        return `Error writing file: ${redact(err.message)}`;
       }
     }
   },
@@ -51,20 +168,21 @@ export const BUILTIN_TOOLS = [
     description: 'List the files and directories inside a folder.',
     parameters: ['path'],
     execute: async ({ path: dirPath }) => {
-      const targetPath = dirPath || '.';
-      const fullPath = path.resolve(process.cwd(), targetPath);
-      if (!fs.existsSync(fullPath)) {
-        return `Error: Directory not found at ${targetPath}`;
+      const c = containedPath(dirPath || '.');
+      if (!c.ok) return `Error: ${c.reason}`;
+      if (isIgnored(path.relative(process.cwd(), c.full))) return `Error: "${dirPath || '.'}" is protected/ignored — access denied.`;
+      if (!fs.existsSync(c.full)) {
+        return `Error: Directory not found at ${dirPath || '.'}`;
       }
       try {
-        const files = fs.readdirSync(fullPath);
+        const files = fs.readdirSync(c.full);
         if (files.length === 0) return 'Directory is empty.';
-        return files.map(f => {
-          const stat = fs.statSync(path.join(fullPath, f));
+        return clip(files.map(f => {
+          const stat = fs.statSync(path.join(c.full, f));
           return `${stat.isDirectory() ? '[DIR]' : '[FILE]'} ${f} (${stat.size} bytes)`;
-        }).join('\n');
+        }).join('\n'));
       } catch (err) {
-        return `Error listing directory: ${err.message}`;
+        return `Error listing directory: ${redact(err.message)}`;
       }
     }
   },
@@ -74,15 +192,23 @@ export const BUILTIN_TOOLS = [
     parameters: ['command'],
     execute: async ({ command }) => {
       if (!command) return `Error: run_command needs a command string.`;
-      const blocklist = ['rm -rf /', 'del /s', 'format', 'mkfs'];
-      if (blocklist.some(b => command.includes(b))) {
-        return `Error: Command blocked for safety.`;
+      if (isDangerous(command)) {
+        return `Error: Command blocked for safety (matched a destructive pattern). If this is intentional, run it yourself outside the agent.`;
       }
       try {
-        const { stdout, stderr } = await execAsync(command, { timeout: 30000 });
-        return stdout + (stderr ? `\nStderr:\n${stderr}` : '');
+        // stdio:'ignore' for stdin so a command that waits on input can't hang until the timeout;
+        // maxBuffer caps memory; output is clipped before it reaches the model.
+        const { stdout, stderr } = await execAsync(command, {
+          timeout: 30000,
+          maxBuffer: MAX_CMD_BUFFER,
+          windowsHide: true,
+          stdio: ['ignore', 'pipe', 'pipe'],
+        });
+        return clip(stdout + (stderr ? `\nStderr:\n${stderr}` : ''));
       } catch (err) {
-        return `Error running command: ${err.message}`;
+        // err carries partial stdout/stderr on timeout/maxBuffer — surface what we have, redacted.
+        const extra = (err.stdout || '') + (err.stderr ? `\nStderr:\n${err.stderr}` : '');
+        return clip(`Error running command: ${redact(err.message)}${extra ? '\n' + extra : ''}`);
       }
     }
   }

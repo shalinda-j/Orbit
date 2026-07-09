@@ -1,4 +1,4 @@
-import { config, isProviderConfigured, PROVIDER_NAMES, providerEnv, applyProviderConfig, setGlobalEnv, removeGlobalEnv, clearProviderConfig } from '../config.js';
+import { config, isProviderConfigured, PROVIDER_NAMES, providerEnv, applyProviderConfig, setGlobalEnv, removeGlobalEnv, clearProviderConfig, setProviderDisabled, isProviderDisabled } from '../config.js';
 import { PRESETS } from '../providers/presets.js';
 import { addToProjectConfig } from '../orbitconfig.js';
 import { extProviderNames } from '../extensions.js';
@@ -60,14 +60,27 @@ export default {
       },
     },
     remove: {
-      desc: 'Disconnect a provider: connect remove <provider>',
+      desc: 'Disconnect a provider: connect remove <provider>  (keyless providers like claude-code are turned off)',
       run: async (a, ctx) => {
         const name = a._[0];
         if (!name) throw new Error('usage: connect remove <provider>');
         const env = providerEnv(name);
         if (env) { removeGlobalEnv(env.keyEnv); if (env.baseUrlEnv) removeGlobalEnv(env.baseUrlEnv); }
         clearProviderConfig(name);
-        ctx.print(`  ✓ ${name} disconnected (removed from ~/.orbit/.env)`);
+        // Keyless providers (claude-code, ollama) stay "configured" after clearing a key — turn them
+        // off explicitly so `connect remove claude-code` actually disables the subscription provider.
+        if (isProviderConfigured(name)) { setProviderDisabled(name, true); ctx.print(`  ✓ ${name} turned off`); }
+        else ctx.print(`  ✓ ${name} disconnected (removed from ~/.orbit/.env)`);
+      },
+    },
+    enable: {
+      desc: 'Turn a previously-disabled provider back on: connect enable <provider>',
+      run: async (a, ctx) => {
+        const name = a._[0];
+        if (!name) throw new Error('usage: connect enable <provider>');
+        if (!isProviderDisabled(name)) { ctx.print(`  ${name} is not disabled`); return; }
+        setProviderDisabled(name, false);
+        ctx.print(`  ✓ ${name} re-enabled`);
       },
     },
     add: {

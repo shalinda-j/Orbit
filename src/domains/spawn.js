@@ -1,6 +1,29 @@
 import { spawn } from 'child_process';
 import path from 'path';
 import { withStore, readStore, nextId, logEvent } from '../store.js';
+import { config } from '../config.js';
+
+// Build the env for a spawned CLI, optionally routing it through a different provider's
+// OpenAI-compatible endpoint (e.g. OpenRouter) instead of its own default. codex/openai-based
+// CLIs read OPENAI_BASE_URL / OPENAI_API_KEY / OPENAI_MODEL — set them via env (NOT the shell
+// string, so there's no injection). `--via <provider>` pulls from an already-connected provider;
+// explicit --base-url / --api-key / --model override.
+function spawnEnv(a) {
+  const env = { ...process.env };
+  const via = a.via ? String(a.via).toLowerCase() : null;
+  if (via) {
+    const p = config.providers[via];
+    if (!p) throw new Error(`unknown --via provider "${via}" — see \`orbit connect\``);
+    const base = p.baseUrl || (via === 'openai' ? 'https://api.openai.com/v1' : '');
+    if (base) env.OPENAI_BASE_URL = base;
+    if (p.apiKey) env.OPENAI_API_KEY = p.apiKey;
+    if (p.defaultModel) env.OPENAI_MODEL = p.defaultModel;
+  }
+  if (a['base-url'] || a.baseUrl) env.OPENAI_BASE_URL = a['base-url'] || a.baseUrl;
+  if (a['api-key'] || a.key) env.OPENAI_API_KEY = a['api-key'] || a.key;
+  if (a.model) env.OPENAI_MODEL = a.model;
+  return env;
+}
 
 // Which shell command launches each coding CLI as a team member.
 // Override/add with the CLI_COMMANDS env var: "claude=claude,codex=codex,foo=foo-cli".
@@ -35,7 +58,7 @@ export default {
   help: 'Launch external coding CLIs (claude/codex/gemini/...) as team agents',
   commands: {
     new: {
-      desc: 'spawn new --role Backend --cli claude [--dir path] [--terminal wt|cmd]',
+      desc: 'spawn new --role Backend --cli claude [--dir path] [--terminal wt|cmd] [--via openrouter | --base-url U --api-key K --model M]',
       run: async (a, ctx) => {
         const role = a.role || a._[0];
         if (!role) throw new Error('need --role');
@@ -52,10 +75,12 @@ export default {
           ctx.print(`  ! Could not open a terminal automatically. Open one yourself:`);
           ctx.print(`      cd ${dir} && ${CLI_COMMANDS[cli] || cli}`);
         };
-        const child = spawn(terminalCmd(cli, dir, a.terminal), { shell: true, detached: true, stdio: 'ignore' });
+        const env = spawnEnv(a); // may route the CLI through OpenRouter/another provider (throws on bad --via)
+        const child = spawn(terminalCmd(cli, dir, a.terminal), { shell: true, detached: true, stdio: 'ignore', env });
         child.on('error', fallback);
         child.on('exit', (code) => { if (code) fallback(); });
         child.unref();
+        if (env.OPENAI_BASE_URL) ctx.print(`  ↳ routing ${cli} via ${env.OPENAI_BASE_URL}${a.via ? ` (${a.via})` : ''}`);
 
         await withStore(s => {
           s.agents.push({ role, cli, dir, terminal: a.terminal || 'wt', startedAt: Date.now() });

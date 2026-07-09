@@ -1,5 +1,46 @@
 # Changelog
 
+## v1.5.0
+
+A large hardening + reliability + UX release from a full 8-dimension audit (34 agents), plus two
+issues reported from the field.
+
+### Field fixes
+- **`/disconnect claude-code` now works.** Keyless providers (claude-code, ollama) can be turned off — the choice persists to `~/.orbit/.env` (`ORBIT_DISABLED_PROVIDERS`) and is re-enabled from the `/connect` wizard or `orbit connect enable <provider>`.
+- **Route an external CLI through OpenRouter (or any provider).** `orbit spawn new --cli codex --via openrouter` (or explicit `--base-url/--api-key/--model`) injects `OPENAI_BASE_URL/KEY/MODEL` into the spawned CLI's env — so codex-style tools talk to OpenRouter instead of OpenAI, no shell injection.
+
+### Security
+- **Agent file tools are contained to the working directory.** `view_file`/`write_file`/`list_dir` reject `../` traversal and absolute paths, and honor **`.orbitignore`** — `.env`, `.git`, `node_modules`, `.orbit` are protected by default, so a steered agent can't read your keys or escape the project.
+- **`run_command` gets a real danger gate**, not a 4-string blocklist: whitespace/variant-aware detection of `rm -rf /` (incl. `/*`), `mkfs`, `dd` to a raw disk, fork bombs, `curl … | sh`, encoded PowerShell, etc. Output is capped (1 MB buffer, 20 K returned) and stdin is closed so a command can't hang the run.
+- **Secrets are scrubbed** before anything is written to the brain (API-key prefixes + labelled `key=…` pairs), and tool/provider error messages are **redacted** of home/cwd paths.
+- **No shell when launching the Claude Code CLI** (parses `CLAUDE_CODE_BIN` itself), and the MCP client caps buffered stdout so a hostile server can't OOM it. The **Gemini key moved out of the URL** into a header.
+- File writes now **snapshot the prior version to `.orbit/undo/`** for recovery.
+
+### Reliability
+- **Every provider now has a request timeout + automatic retry** (exponential backoff, honors `Retry-After`) on 429/5xx, and **classifies errors** (auth vs rate-limit vs context-length vs transient) with actionable messages.
+- **A provider hiccup no longer aborts the whole run** — a failed agent turn fails over once to another configured provider.
+- **Null / content-filtered responses no longer crash** the run (all providers coerce empty content; Gemini/Anthropic surface the block reason).
+- **The store is written atomically** (temp-file + rename) and the lock's steal race + timeout mismatch are fixed.
+- **Genesis** recovers a JSON team from prose/fenced output and **warns** (instead of silently falling back) when it can't.
+
+### Performance / cost
+- **Anthropic prompt caching** on the re-sent system prompt (~90% cheaper input on later turns).
+- **Real per-provider cost estimate** — each agent's tokens priced by its own provider, not one flat rate; claude-code/local shown as free.
+- **Lazy mode** now also skips the per-turn coordinator call (round-robin) and the synthesizer call.
+
+### UX
+- **Ctrl+C actually aborts** the in-flight model calls now (stops token spend), threaded end-to-end.
+- **`/model` works for any provider** (`/model <provider> <model>` or `/model <model>` for the preferred one) — was NVIDIA-only.
+- **Non-interactive one-shot**: `orbit -p "task"` or `echo task | orbit` runs the team once and prints the result (CI/scripting), and **`orbit --version`**.
+- **Command history persists** across sessions (up-arrow), secrets excluded; **live spinner shows each agent's model**; first run with no providers points at `/connect`; new **`/last`** recalls the previous run.
+- Fixed a display bug where `/effort`, `/mode`, `/skip` rendered as escape codes in `/help`.
+
+### Distribution / DX
+- **GitHub Actions CI** (Ubuntu + Windows, Node 18/20/22), **`prepublishOnly: npm test`**, `CHANGELOG.md` + `LICENSE` added to the published files, **CONTRIBUTING.md**, and the **ISC→MIT** license mismatch in the Homebrew/AUR manifests fixed.
+- New **`tests/test-hardening.js`** suite (containment, ignore, danger gate, error classification, provider disable, genesis recovery, secret scrubbing). **17 suites, all green.**
+
+Deferred (tracked): token streaming, full session serialize/resume, interactive per-write approval prompts, an apply-patch/diff tool, multiline paste input, MCP connection pooling.
+
 ## v1.4.1
 
 ### Fixed

@@ -89,7 +89,7 @@ assert(gammaSaw.includes('PLAN') && gammaSaw.includes('CODE'), 'Reviewer (provid
 assert(gammaSaw.includes('@planner') && gammaSaw.includes('@coder'), 'messages are attributed by @handle');
 
 // 4. Tool use mid-run worked (beta called list_dir and got output back).
-assert(betaCalls === 2 && betaSaw.includes('[Tool Output]'), 'agent used a workspace tool mid-run and saw the result');
+assert(betaCalls === 2 && betaSaw.includes('[Tool Output'), 'agent used a workspace tool mid-run and saw the result');
 
 // 5. [FINISHED] ended the run before maxTurns, and synthesis combined the work.
 assert(result.finalOutput.includes('FINAL PRODUCT'), 'synthesizer produced the final combined product');

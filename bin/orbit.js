@@ -3,8 +3,9 @@
 import readline from 'readline';
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 import { fileURLToPath } from 'url';
-import { config, isProviderConfigured, PROVIDER_NAMES, providerEnv, applyProviderConfig, setGlobalEnv, removeGlobalEnv, clearProviderConfig, EFFORT_TURNS } from '../src/config.js';
+import { config, isProviderConfigured, PROVIDER_NAMES, providerEnv, applyProviderConfig, setGlobalEnv, removeGlobalEnv, clearProviderConfig, setProviderDisabled, isProviderDisabled, EFFORT_TURNS } from '../src/config.js';
 import { brainSave, brainSearch } from '../src/brain.js';
 import { Agent } from '../src/agent.js';
 import { Orchestrator } from '../src/orchestrator.js';
@@ -22,6 +23,24 @@ import {
 } from '../src/tui.js';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Installed version (for --version and the banner).
+function orbitVersion() {
+  try { return JSON.parse(fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'package.json'), 'utf8')).version; }
+  catch { return '?'; }
+}
+
+// Persisted command history so up-arrow works across sessions (readline seeds from this).
+const historyFile = () => path.join(os.homedir(), '.orbit', 'history');
+function loadHistory() {
+  try { return fs.readFileSync(historyFile(), 'utf8').split(/\r?\n/).filter(Boolean).slice(-500).reverse(); } // most-recent first
+  catch { return []; }
+}
+function appendHistory(line) {
+  // Never persist a line that looks like it carries a secret (e.g. a key pasted into a command).
+  if (/\b(sk-|nvapi-|gh[posru]_|glpat-|AIza|xox[baprs]-)/.test(line)) return;
+  try { fs.mkdirSync(path.dirname(historyFile()), { recursive: true }); fs.appendFileSync(historyFile(), line + '\n'); } catch { /* best effort */ }
+}
 
 // Self-improvement: pull relevant past runs from the brain into a new task's context.
 function recallMemory(goal) {
@@ -130,6 +149,7 @@ let exiting = false;             // guard exitGracefully against re-entry (rl.cl
 let pending = Promise.resolve(); // serializes slash-command work so exit can wait for it to flush
 let taskGen = 0;                 // bumped on each task start AND on Ctrl+C, to invalidate an aborted run
 let activeSpinner = null;        // current task's spinner, so SIGINT can stop it
+let taskAbort = null;            // current task's AbortController, so SIGINT cancels in-flight model calls
 let wizardActive = false;        // true for the whole /connect wizard session
 let wizardResolve = null;        // set while the wizard awaits the next line
 const wizardBuf = [];            // lines that arrived before the next question was posted (paste / fast input)
@@ -166,7 +186,16 @@ async function runConnectWizard(rl, providerStatuses) {
       if (!chosen) { console.log(COLORS.error('   ✗ not found')); continue; }
       const name = chosen.name;
 
-      if (keyless[name]) { console.log(COLORS.muted('   ' + keyless[name])); console.log(''); continue; }
+      if (keyless[name]) {
+        if (isProviderDisabled(name)) {
+          setProviderDisabled(name, false);
+          chosen.configured = isProviderConfigured(name);
+          console.log(COLORS.success(`   ✓ ${name} re-enabled`));
+        } else {
+          console.log(COLORS.muted('   ' + keyless[name]));
+        }
+        console.log(''); continue;
+      }
       const env = providerEnv(name);
       if (!env) { console.log(COLORS.muted('   no key needed')); console.log(''); continue; }
 
@@ -214,8 +243,9 @@ function accumulateTokens(taskTokenStats) {
   sessionTokens.totalTokens += taskTokenStats.totalTokens;
   for (const [name, stats] of Object.entries(taskTokenStats.breakdown)) {
     if (!sessionTokens.breakdown[name]) {
-      sessionTokens.breakdown[name] = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+      sessionTokens.breakdown[name] = { promptTokens: 0, completionTokens: 0, totalTokens: 0, provider: stats.provider };
     }
+    if (stats.provider) sessionTokens.breakdown[name].provider = stats.provider;
     sessionTokens.breakdown[name].promptTokens += stats.promptTokens;
     sessionTokens.breakdown[name].completionTokens += stats.completionTokens;
     sessionTokens.breakdown[name].totalTokens += stats.totalTokens;
@@ -232,7 +262,10 @@ async function main() {
     if (fs.existsSync(envPath)) {
       console.log(COLORS.warning(`.env already exists at ${envPath}`));
     } else {
-      fs.writeFileSync(envPath, ENV_TEMPLATE);
+      // Prefer the shipped .env.example (single source of truth); fall back to the inline template.
+      const example = path.join(__dirname, '..', '.env.example');
+      const content = fs.existsSync(example) ? fs.readFileSync(example, 'utf8') : ENV_TEMPLATE;
+      fs.writeFileSync(envPath, content);
       console.log(COLORS.success(`Created .env template at ${envPath}. Add your keys, then run 'orbit'.`));
     }
     process.exit(0);
@@ -245,7 +278,7 @@ async function main() {
   await emit('session.start', { cwd: process.cwd() });
 
   // Every slash command (session commands + every domain + aliases) for autocomplete.
-  const SESSION_CMDS = ['/help', '/connect', '/disconnect', '/use', '/effort', '/model', '/mode', '/chat', '/plan', '/build', '/skip', '/style', '/lazy', '/anim', '/tokens', '/turns', '/clear', '/exit'];
+  const SESSION_CMDS = ['/help', '/connect', '/disconnect', '/use', '/effort', '/model', '/mode', '/chat', '/plan', '/build', '/skip', '/style', '/lazy', '/anim', '/tokens', '/turns', '/last', '/clear', '/exit'];
   const ALIASES = ['/board', '/team', '/brain', '/channel'];
   const SLASH = [...new Set([...SESSION_CMDS, ...ALIASES, ...Object.keys(await loadDomains()).map(n => '/' + n)])].sort();
 
@@ -254,6 +287,8 @@ async function main() {
     output: process.stdout,
     prompt: renderPrompt(mode),
     terminal: true,
+    history: loadHistory(),
+    historySize: 500,
     // Tab-completion for slash commands (also safe: readline owns the line rendering).
     completer: (line) => {
       if (!line.startsWith('/')) return [[], line];
@@ -317,9 +352,10 @@ async function main() {
   console.log('');
 
   if (activeProviders.length === 0) {
-    console.log(COLORS.dim('  │ ') + COLORS.error('No API keys configured'));
-    console.log(COLORS.dim('  │ ') + COLORS.text('Add your key to .env: ') + COLORS.secondary('NVIDIA_API_KEY=nvapi-xxx'));
-    console.log(COLORS.dim('  └ ') + COLORS.muted('Get a free key → https://build.nvidia.com'));
+    console.log(COLORS.dim('  │ ') + COLORS.error('No providers connected yet'));
+    console.log(COLORS.dim('  │ ') + COLORS.text('Type ') + COLORS.secondary('/connect') + COLORS.text(' to set one up') + COLORS.dim(' (guided — pick, paste key, done)'));
+    console.log(COLORS.dim('  │ ') + COLORS.muted('Or use Claude Code free: install it & run `claude` once — no key.'));
+    console.log(COLORS.dim('  └ ') + COLORS.muted('Free API key → https://build.nvidia.com'));
     console.log('');
   }
 
@@ -344,6 +380,7 @@ async function main() {
       rl.prompt();
       return;
     }
+    appendHistory(trimmed); // persist for cross-session up-arrow (secrets are skipped inside)
 
     // Slash commands — serialize so bulk/pasted input runs in order and exit can await it.
     // The .catch keeps `pending` resolved: one failing command can't poison the chain or crash the TUI.
@@ -386,6 +423,7 @@ async function main() {
     const t0 = Date.now();
     const spinner = new Spinner();
     activeSpinner = spinner;
+    taskAbort = new AbortController(); // Ctrl+C aborts the in-flight model calls (stops billing)
     const supervisorProvider = preferred(runProviders);
     const subscription = supervisorProvider === 'claude-code';
     if (subscription) usedSubscription = true;
@@ -401,9 +439,10 @@ async function main() {
         const res = await provider.chat({
           systemPrompt: 'You are Orbit, a concise CLI assistant. Answer directly with the minimum formatting needed — prose for simple questions, lists only when genuinely multifaceted. No preamble, no filler, no postamble. Scale depth to the question.',
           messages: [{ role: 'user', content: trimmed }],
+          signal: taskAbort.signal,
         });
         spinner.stop();
-        const stats = { promptTokens: res.usage.promptTokens, completionTokens: res.usage.completionTokens, totalTokens: res.usage.totalTokens, breakdown: { Orbit: res.usage } };
+        const stats = { promptTokens: res.usage.promptTokens, completionTokens: res.usage.completionTokens, totalTokens: res.usage.totalTokens, breakdown: { Orbit: { ...res.usage, provider: supervisorProvider } } };
         if (!aborted()) {
           console.log(renderAgentResponse('Orbit', supervisorProvider, res.content, res.usage));
           console.log(renderTokenSummary(stats, { subscription }));
@@ -442,13 +481,15 @@ async function main() {
       const mcpTools = await discoverTools();
       if (mcpTools.length) console.log(renderSystemMessage(`${mcpTools.length} MCP tool(s) available to the team`));
 
-      const orchestrator = new Orchestrator({ agents, supervisorProvider, toolPolicy, mcpTools });
+      const orchestrator = new Orchestrator({ agents, supervisorProvider, toolPolicy, mcpTools, signal: taskAbort.signal });
 
       const animate = () => config.animate && process.stdout.isTTY && !config.lazy;
       const onAgentSpeak = async (agentName, text, isThinking, usage) => {
         if (aborted()) { spinner.stop(); return; } // Ctrl+C — suppress the orphaned run's output
         if (isThinking) {
-          spinner.start(agentName === 'System' ? text : `${handleOf(agentName)} is thinking`);
+          if (agentName === 'System') { spinner.start(text); return; }
+          const ag = agents.find(a => a.name === agentName);
+          spinner.start(`${handleOf(agentName)}${ag?.model ? COLORS.dim(' (' + ag.model + ')') : ''} is thinking`);
           return;
         }
         spinner.stop();
@@ -519,10 +560,11 @@ async function main() {
     }
     if (isProcessing) {
       taskGen++;                 // invalidate the running task so it stops printing / can't reset state
+      if (taskAbort) taskAbort.abort(); // cancel in-flight model calls so we stop consuming tokens
       if (activeSpinner) activeSpinner.stop();
       activeSpinner = null;
       console.log('');
-      console.log(renderSystemMessage('Task interrupted (its output is suppressed; the model call may still finish in the background).'));
+      console.log(renderSystemMessage('Task interrupted — in-flight model calls aborted.'));
       isProcessing = false;
       rl.prompt();
     } else {
@@ -579,28 +621,44 @@ async function handleSlashCommand(input, rl, agents, providerStatuses) {
       console.log(renderAgentList([])); // Renders dynamic team status message
       break;
 
-    case '/model':
-      const modelArg = parts[1];
-      if (modelArg) {
-        config.providers.nvidia.defaultModel = modelArg;
-        console.log('');
-        console.log(COLORS.dim('  └ ') + COLORS.muted('NVIDIA default model updated to: ') + COLORS.bright(modelArg));
-        console.log('');
+    case '/model': {
+      // /model                       → list every provider's current default model
+      // /model <provider> <model>    → set that provider's default
+      // /model <model>               → set the default for the preferred active provider
+      const a1 = parts[1];
+      const a2 = parts.slice(2).join(' ');
+      const setModel = (name, m) => {
+        const p = config.providers[name];
+        if (!p) return false;
+        if (name === 'claude-code') p.model = m; else p.defaultModel = m;
+        return true;
+      };
+      if (a1 && (config.providers[a1] || isProviderDisabled(a1)) && a2) {
+        setModel(a1, a2);
+        console.log('\n' + COLORS.dim('  └ ') + COLORS.muted(`${a1} model → `) + COLORS.bright(a2) + '\n');
+      } else if (a1) {
+        // single arg = a model name; apply to the preferred configured provider
+        const active = PROVIDER_NAMES.filter(isProviderConfigured);
+        const target = preferred(active) || 'nvidia';
+        setModel(target, parts.slice(1).join(' '));
+        console.log('\n' + COLORS.dim('  └ ') + COLORS.muted(`${target} model → `) + COLORS.bright(parts.slice(1).join(' ')) +
+          COLORS.dim('   · use /model <provider> <model> to target another') + '\n');
       } else {
         console.log('');
-        console.log(COLORS.bright.bold('  Active Provider Defaults:'));
-        console.log(`  - nvidia    : ${config.providers.nvidia.defaultModel}`);
-        console.log(`  - gemini    : ${config.providers.gemini.defaultModel}`);
-        console.log(`  - openai    : ${config.providers.openai.defaultModel}`);
-        console.log(`  - anthropic : ${config.providers.anthropic.defaultModel}`);
-        console.log(`  - ollama    : ${config.providers.ollama.defaultModel}`);
-        console.log(`  - custom    : ${config.providers.custom.defaultModel || '(set CUSTOM_DEFAULT_MODEL)'}`);
-        console.log(`  - claude-code: ${config.providers['claude-code'].model || '(subscription default — set CLAUDE_CODE_MODEL e.g. sonnet)'}`);
+        console.log(COLORS.bright.bold('  Provider default models:'));
+        for (const name of PROVIDER_NAMES) {
+          const p = config.providers[name];
+          if (!p) continue;
+          const m = name === 'claude-code' ? (p.model || '(subscription default)') : (p.defaultModel || '(unset)');
+          const on = isProviderConfigured(name) ? COLORS.success('●') : COLORS.dim('○');
+          console.log(`   ${on} ${name.padEnd(12)} ${COLORS.text(m)}`);
+        }
         console.log('');
-        console.log(COLORS.muted('  Use: /model <model_name> to change NVIDIA default model.'));
+        console.log(COLORS.muted('  Set:  /model <provider> <model>   or   /model <model>  (preferred provider)'));
         console.log('');
       }
       break;
+    }
 
     case '/effort': {
       const lvl = (parts[1] || '').toLowerCase();
@@ -652,11 +710,14 @@ async function handleSlashCommand(input, rl, agents, providerStatuses) {
       const env = providerEnv(target.name);
       if (env) { removeGlobalEnv(env.keyEnv); if (env.baseUrlEnv) removeGlobalEnv(env.baseUrlEnv); }
       clearProviderConfig(target.name);
-      target.configured = isProviderConfigured(target.name); // re-check (claude-code/ollama stay on)
+      // Keyless providers (claude-code, ollama) stay configured after clearing a key — turn them
+      // off explicitly so `/disconnect claude-code` actually takes effect.
+      if (isProviderConfigured(target.name)) setProviderDisabled(target.name, true);
+      target.configured = isProviderConfigured(target.name);
       config.useProviders = config.useProviders.filter(n => n !== target.name);
       console.log('');
-      if (target.configured) console.log(COLORS.dim('  └ ') + COLORS.muted(`${target.name} can't be disconnected here (it's not key-based).`));
-      else console.log(COLORS.dim('  └ ') + COLORS.success(`✓ ${target.name} disconnected`) + COLORS.dim('  (removed from ~/.orbit/.env)'));
+      console.log(COLORS.dim('  └ ') + COLORS.success(`✓ ${target.name} disconnected`) +
+        COLORS.dim(env ? '  (removed from ~/.orbit/.env)' : '  (turned off — re-enable with /connect)'));
       console.log('');
       break;
     }
@@ -740,6 +801,22 @@ async function handleSlashCommand(input, rl, agents, providerStatuses) {
       }
       break;
 
+    case '/last':
+    case '/runs': {
+      const hits = brainSearch({ category: 'runs' }); // newest first
+      console.log('');
+      if (!hits.length) {
+        console.log(COLORS.dim('  └ ') + COLORS.muted('no past runs saved yet'));
+      } else {
+        console.log(COLORS.bright.bold('  Last run  ') + COLORS.dim('· ' + hits[0].title));
+        console.log(COLORS.dim('  ' + '─'.repeat(46)));
+        for (const line of String(hits[0].body).slice(0, 2000).split('\n')) console.log('  ' + COLORS.text(line));
+        if (hits.length > 1) console.log(COLORS.dim(`\n  (${hits.length} runs in memory — brain search "<topic>" to find more)`));
+      }
+      console.log('');
+      break;
+    }
+
     case '/clear':
       clearScreen();
       console.log('');
@@ -801,6 +878,28 @@ function exitGracefully(rl) {
   if (argv[0] === 'help' || argv[0] === '--help' || argv[0] === '-h') {
     console.log(await helpText());
     process.exit(0);
+  }
+
+  if (argv[0] === '--version' || argv[0] === '-v') {
+    console.log(orbitVersion());
+    process.exit(0);
+  }
+
+  // Non-interactive one-shot (scripting / CI / Unix pipelines):
+  //   orbit -p "build X"           run the team once, print the result, exit
+  //   echo "build X" | orbit -p    read the task from stdin
+  //   echo "build X" | orbit       bare piped stdin also runs one-shot
+  const printFlag = argv[0] === '-p' || argv[0] === '--print';
+  const barePiped = argv.length === 0 && !process.stdin.isTTY;
+  if (printFlag || barePiped) {
+    const rest = printFlag ? argv.slice(1) : argv;
+    let task = rest.filter(x => !x.startsWith('-')).join(' ').trim();
+    if (!task && !process.stdin.isTTY) { try { task = fs.readFileSync(0, 'utf8').trim(); } catch { /* no stdin */ } }
+    if (!task) { console.error('usage: orbit -p "task"   (or pipe the task via stdin)'); process.exit(1); }
+    const runArgs = ['run', task];
+    if (rest.includes('--skip') || rest.includes('--auto')) runArgs.push('--skip');
+    if (rest.includes('--plan')) runArgs.push('--plan');
+    process.exit(await dispatch(runArgs));
   }
 
   // `init` and the no-arg TUI are handled by main(); everything else that names

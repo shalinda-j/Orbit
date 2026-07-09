@@ -75,31 +75,43 @@ You MUST return ONLY a valid JSON array of agent objects, containing the keys: "
 Do NOT wrap the JSON in markdown code blocks like \`\`\`json. Output raw JSON.
 If the task is simple, 1 or 2 agents are enough. If complex, use 3 or 4.${config.lazy ? '\nLAZY MODE: minimize token cost — use the FEWEST agents that can do the job (prefer 1, at most 2).' : ''}`;
 
+  let response;
   try {
-    const response = await provider.chat({
+    response = await provider.chat({
       systemPrompt,
       messages: [{ role: 'user', content: `Task: ${task}` }],
       temperature: 0.2,
     });
-
-    let rawJson = response.content.trim();
-    if (rawJson.startsWith('```')) {
-      rawJson = rawJson.replace(/^```json\s*/i, '').replace(/```$/, '').trim();
-    }
-
-    const teamConfigs = JSON.parse(rawJson);
-    if (!Array.isArray(teamConfigs) || teamConfigs.length === 0) {
-      throw new Error('Invalid JSON array structure.');
-    }
-
-    return teamConfigs.map(cfg => ({
-      name: cfg.name || 'Agent',
-      role: cfg.role || 'Assistant',
-      instructions: cfg.instructions || 'Collaborate to solve the task.',
-      provider: activeProviders.includes(cfg.provider) ? cfg.provider : activeProviders[0],
-      model: cfg.model || undefined,
-    }));
-  } catch {
+  } catch (e) {
+    onStatus(`⚠ team designer call failed (${e.message}) — using the default team`);
     return getDefaultFallbackTeam(activeProviders);
   }
+
+  const teamConfigs = parseTeamJson(response.content);
+  if (!teamConfigs) {
+    onStatus('⚠ team designer returned unparseable output — using the default team');
+    return getDefaultFallbackTeam(activeProviders);
+  }
+
+  return teamConfigs.map(cfg => ({
+    name: cfg.name || 'Agent',
+    role: cfg.role || 'Assistant',
+    instructions: cfg.instructions || 'Collaborate to solve the task.',
+    provider: activeProviders.includes(cfg.provider) ? cfg.provider : activeProviders[0],
+    model: cfg.model || undefined,
+  }));
+}
+
+// Extract a JSON agent array from a model reply that may wrap it in prose or ```json fences.
+// Returns the parsed non-empty array, or null if nothing valid is found (caller uses the fallback).
+function parseTeamJson(raw) {
+  let s = String(raw || '').trim();
+  s = s.replace(/```(?:json)?/gi, '').trim(); // drop any code fences, anywhere
+  const tryParse = (t) => { try { const v = JSON.parse(t); return Array.isArray(v) && v.length ? v : null; } catch { return null; } };
+  let out = tryParse(s);
+  if (out) return out;
+  // Fall back to the first [...] array substring (handles leading/trailing prose the model added).
+  const first = s.indexOf('['), last = s.lastIndexOf(']');
+  if (first !== -1 && last > first) out = tryParse(s.slice(first, last + 1));
+  return out;
 }

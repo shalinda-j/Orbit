@@ -1,4 +1,5 @@
 import { config, maxTokens } from '../config.js';
+import { postJSON } from './http.js';
 
 export class OllamaProvider {
   constructor() {
@@ -6,7 +7,7 @@ export class OllamaProvider {
     this.defaultModel = config.providers.ollama.defaultModel;
   }
 
-  async chat({ systemPrompt, messages, model, temperature = 0.7 }) {
+  async chat({ systemPrompt, messages, model, temperature = 0.7, signal }) {
     // 'default' is the sentinel the team generator emits — resolve it to the configured model.
     const selectedModel = (model && model !== 'default') ? model : this.defaultModel;
     const url = `${this.baseUrl}/api/chat`;
@@ -33,36 +34,30 @@ export class OllamaProvider {
       }
     };
 
+    let data;
     try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(body),
+      // Local models can be slow to load — allow a generous timeout.
+      data = await postJSON(url, {
+        name: 'Ollama',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+        timeoutMs: 300000,
+        signal,
       });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Ollama API error (${response.status}): ${errorText}`);
-      }
-
-      const data = await response.json();
-      
-      if (data.message && data.message.content) {
-        return {
-          content: data.message.content,
-          usage: {
-            promptTokens: data.prompt_eval_count || 0,
-            completionTokens: data.eval_count || 0,
-            totalTokens: (data.prompt_eval_count || 0) + (data.eval_count || 0)
-          }
-        };
-      } else {
-        throw new Error(`Unexpected Ollama response format: ${JSON.stringify(data)}`);
-      }
     } catch (error) {
-      throw new Error(`Failed to call Ollama provider at ${this.baseUrl}: ${error.message}. Is Ollama running?`);
+      throw new Error(`${error.message}. Is Ollama running at ${this.baseUrl}?`);
     }
+
+    if (data.message && data.message.content) {
+      return {
+        content: data.message.content,
+        usage: {
+          promptTokens: data.prompt_eval_count || 0,
+          completionTokens: data.eval_count || 0,
+          totalTokens: (data.prompt_eval_count || 0) + (data.eval_count || 0)
+        }
+      };
+    }
+    throw new Error(`Unexpected Ollama response format: ${JSON.stringify(data).slice(0, 200)}`);
   }
 }

@@ -69,7 +69,7 @@ let editMsg = '';
 registerProvider('fw', {
   name: 'fw',
   async chat({ messages }) {
-    const wrote = messages.some(m => m.content.includes('[Tool Output]'));
+    const wrote = messages.some(m => m.content.includes('[Tool Output'));
     return { content: wrote ? '[FINISHED] wrote it' : '<tool:write_file path="hello.txt">line1\nline2</tool:write_file>', usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 } };
   },
 });

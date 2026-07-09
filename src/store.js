@@ -51,12 +51,21 @@ function writeStoreRaw(store) {
   if (fs.existsSync(f)) {
     try { fs.copyFileSync(f, f + '.bak'); } catch { /* best effort backup */ }
   }
-  fs.writeFileSync(f, JSON.stringify(store, null, 2), 'utf8');
+  // Atomic write: fill a temp file, then rename over the live file. A crash / Ctrl+C
+  // mid-write can only leave the temp file behind — store.json is never half-written.
+  const tmp = f + '.tmp.' + process.pid;
+  fs.writeFileSync(tmp, JSON.stringify(store, null, 2), 'utf8');
+  fs.renameSync(tmp, f); // rename replaces the destination atomically (incl. on Windows)
 }
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-async function acquireLock(timeoutMs = 5000) {
+const STALE_MS = 10000; // a lock older than this is considered abandoned and may be stolen
+
+// timeout > STALE_MS so a waiter always gets a chance to steal an abandoned lock before
+// giving up — the old 5s timeout vs 15s stale-threshold made callers throw while a
+// healthy holder still legitimately owned the lock.
+async function acquireLock(timeoutMs = 20000) {
   ensureDir();
   const start = Date.now();
   for (;;) {
@@ -66,7 +75,14 @@ async function acquireLock(timeoutMs = 5000) {
     } catch {
       try {
         const age = Date.now() - fs.statSync(lockDir()).mtimeMs;
-        if (age > 15000) { fs.rmdirSync(lockDir()); continue; } // steal stale lock
+        if (age > STALE_MS) {
+          // Steal atomically: rename the stale lock to a unique name FIRST. Only the one
+          // process whose rename succeeds owns the steal, so two racers can't both delete
+          // (and one can't delete a fresh lock another just acquired). rename fails if it's gone.
+          const dead = lockDir() + '.dead.' + process.pid;
+          try { fs.renameSync(lockDir(), dead); fs.rmdirSync(dead); } catch { /* lost the race — retry */ }
+          continue;
+        }
       } catch { /* lock vanished — retry */ }
       if (Date.now() - start > timeoutMs) throw new Error('store lock timeout');
       await sleep(40);
