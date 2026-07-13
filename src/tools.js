@@ -214,6 +214,31 @@ export const BUILTIN_TOOLS = [
   }
 ];
 
+// Run a verification/acceptance command and report pass/fail by EXIT CODE (unlike the
+// run_command tool, which only returns text). Same danger gate + output caps. Powers the
+// build→verify loop: "done" means the checks actually pass, not just that an agent said so.
+// A longer timeout than run_command (a real test/build suite is slower than an agent's ad-hoc command).
+const MAX_CHECK_MS = 120000;
+export async function runCheck(command) {
+  if (!command) return { passed: false, output: 'no verify command given' };
+  if (isDangerous(command)) {
+    return { passed: false, output: 'verify command blocked for safety (matched a destructive pattern)' };
+  }
+  try {
+    const { stdout, stderr } = await execAsync(command, {
+      timeout: MAX_CHECK_MS,
+      maxBuffer: MAX_CMD_BUFFER,
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    return { passed: true, output: clip(stdout + (stderr ? `\nStderr:\n${stderr}` : '')) };
+  } catch (err) {
+    // Non-zero exit (or timeout/maxBuffer) rejects — that's a FAILED check. Surface what we have, redacted.
+    const extra = (err.stdout || '') + (err.stderr ? `\nStderr:\n${err.stderr}` : '');
+    return { passed: false, output: clip(`${redact(err.message)}${extra ? '\n' + extra : ''}`) };
+  }
+}
+
 // Parse an attribute string, honoring the SAME quote that opened each value.
 // Values may contain the other quote type and '>' without truncating.
 function parseAttrs(str) {

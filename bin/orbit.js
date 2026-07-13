@@ -10,6 +10,7 @@ import { brainSave, brainSearch } from '../src/brain.js';
 import { Agent } from '../src/agent.js';
 import { Orchestrator } from '../src/orchestrator.js';
 import { generateAgentTeam } from '../src/genesis.js';
+import { refineBrief, briefToText } from '../src/intake.js';
 import { getProvider } from '../src/providers/index.js';
 import { discoverTools } from '../src/mcpclient.js';
 import { dispatch, isCommand, helpText, loadDomains } from '../src/cli.js';
@@ -454,9 +455,21 @@ async function main() {
         return;
       }
 
+      // ── Stage 0 · Intake: refine the raw prompt into a build brief (goal + acceptance) ──
+      let briefText = trimmed;
+      if (config.intake) {
+        spinner.start('Refining your request into a build brief');
+        const intakePref = ['claude-code', 'nvidia', 'gemini', 'openai', 'anthropic'].find(p => runProviders.includes(p)) || runProviders[0];
+        const brief = await refineBrief({ rawInput: trimmed, providerName: intakePref, signal: taskAbort.signal, onStatus: (m) => spinner.update(m) });
+        spinner.stop();
+        if (aborted()) { activeSpinner = null; return; }
+        briefText = briefToText(brief);
+        if (brief.acceptance.length) console.log(renderSystemMessage('Acceptance: ' + brief.acceptance.join(' · ')));
+      }
+
       // ── Plan / Build: assemble a team ──
       spinner.start('Designing custom agent team for your task');
-      const teamConfigs = await generateAgentTeam({ task: trimmed, activeProviders: runProviders, onStatus: (m) => spinner.update(m) });
+      const teamConfigs = await generateAgentTeam({ task: briefText, activeProviders: runProviders, onStatus: (m) => spinner.update(m) });
       spinner.stop();
 
       console.log(COLORS.bright.bold('  Assembled Agent Team') + COLORS.dim(`   (${mode} mode)`));
@@ -513,13 +526,16 @@ async function main() {
       // Recall relevant past work from the brain (self-improvement — reuse prior solutions).
       const memory = recallMemory(trimmed);
       const base = mode === 'plan'
-        ? `Produce a detailed implementation PLAN for the following. Do NOT write files or run commands — output the plan/design only.\n\n${trimmed}`
-        : trimmed;
+        ? `Produce a detailed implementation PLAN for the following. Do NOT write files or run commands — output the plan/design only.\n\n${briefText}`
+        : briefText;
       const runTask = base + memory;
 
-      const result = style === 'sequential'
-        ? await orchestrator.runSequential(runTask, onAgentSpeak)
-        : await orchestrator.runCollaborative(runTask, maxTurns, onAgentSpeak);
+      const result = await orchestrator.runBuild(runTask, {
+        maxTurns,
+        mode: style === 'sequential' ? 'sequential' : 'collaborative',
+        verifyCmd: '',
+        rounds: 1,
+      }, onAgentSpeak);
 
       spinner.stop();
 

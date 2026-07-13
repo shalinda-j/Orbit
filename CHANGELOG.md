@@ -1,5 +1,37 @@
 # Changelog
 
+## v1.7.0
+
+The **Conductor** — one command that autonomously takes a goal to a built, verified project.
+
+### `orbit factory "build X"`
+- **New `src/factory.js` + `factory` domain** chain every stage end to end, with no human in the loop:
+  1. **Discover** — refine the ask into a spec (`intake.js`).
+  2. **Design** — a Lead Architect drafts overview · architecture · data model · a Mermaid diagram · an ordered task breakdown, gated by a critic and revised (the "loop engineering").
+  3. **Decompose** — seed the shared task board (`store.js`) from the design.
+  4. **Build** — pluggable substrate: `inprocess` (Orbit's own agents + the build→verify loop) or `hybrid`/`spawn` (launch coding CLIs — claude/codex/… — in real terminals that build from the board).
+  5. **Integrate** — verify the whole project against `--verify "npm test"`; on failure feed it back and fix, up to `--rounds N`.
+- Artifacts (`plan.md`, `design.json`) are written to `.orbit/factory/<slug>/`, and the run is saved to the Brain for recall.
+- `orbit factory "goal" [--substrate inprocess|hybrid|spawn] [--verify "npm test"] [--rounds N] [--cli claude]`. Composes the existing pieces (intake, genesis, orchestrator, board, brain, spawn) — the Conductor is the glue, not a rewrite.
+
+### Tests
+- New **`tests/test-factory.js`** drives the whole pipeline (discover→design→decompose→build→integrate) in a throwaway workspace and asserts artifacts, board seeding, per-task builds, and whole-project verification. **20 suites, all green.**
+
+## v1.6.0
+
+A guided build pipeline: refine the request first, then let the team build and **verify** it.
+
+### Intake (Stage 0)
+- **New `src/intake.js` — a Requirements Analyst runs before the team is designed.** It turns a raw prompt into a structured brief (goal · constraints · **acceptance criteria** · non-goals) so Genesis designs the team, and the agents build, against a precise spec instead of a vague ask.
+- On by default in the TUI and `orbit run`; set **`ORBIT_INTAKE=0`** (or `orbit run --no-intake`) to skip the extra call. Any failure degrades safely to using your request as-is — the pipeline is never blocked.
+
+### Build → Verify loop (Stage 4)
+- **New `Orchestrator.runBuild()` closes the loop.** After the collaborative build, it runs an acceptance command and, on failure, feeds the output back and re-runs the team — up to `--rounds N` times. "Done" now means the checks actually pass, not just that the coordinator said `FINISHED`.
+- `orbit run "goal" --skip --verify "npm test" [--rounds N]`. Verification runs through the same danger gate as `run_command` (new **`runCheck`** in `src/tools.js`, pass/fail by exit code) and only when writes are enabled (`--skip`).
+
+### Tests
+- New **`tests/test-intake.js`** and **`tests/test-build-loop.js`** (brief parsing + fallbacks; verify pass/fail, retry-with-feedback, token accumulation, tool-policy gating). **19 suites, all green.**
+
 ## v1.5.0
 
 A large hardening + reliability + UX release from a full 8-dimension audit (34 agents), plus two
