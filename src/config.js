@@ -62,6 +62,9 @@ for (const [name, p] of Object.entries(PRESETS)) {
 config.limits = { maxTokens: parseInt(process.env.ORBIT_MAX_TOKENS, 10) || 4096 };
 config.lazy = process.env.ORBIT_LAZY === '1' || process.env.ORBIT_LAZY === 'true';
 config.animate = process.env.ORBIT_ANIM !== '0'; // animate the team conversation (TUI only)
+// Stage 0 intake: refine the raw prompt into a build brief before designing the team.
+// On by default; set ORBIT_INTAKE=0 to skip the extra call and use the prompt as-is.
+config.intake = process.env.ORBIT_INTAKE !== '0' && process.env.ORBIT_INTAKE !== 'false';
 
 // Reasoning effort: how hard the team works (deeper = more turns + more deliberation).
 export const EFFORT_TURNS = { low: 2, medium: 4, high: 6, max: 10 };

@@ -1,5 +1,20 @@
 # Changelog
 
+## v1.6.0
+
+A guided build pipeline: refine the request first, then let the team build and **verify** it.
+
+### Intake (Stage 0)
+- **New `src/intake.js` — a Requirements Analyst runs before the team is designed.** It turns a raw prompt into a structured brief (goal · constraints · **acceptance criteria** · non-goals) so Genesis designs the team, and the agents build, against a precise spec instead of a vague ask.
+- On by default in the TUI and `orbit run`; set **`ORBIT_INTAKE=0`** (or `orbit run --no-intake`) to skip the extra call. Any failure degrades safely to using your request as-is — the pipeline is never blocked.
+
+### Build → Verify loop (Stage 4)
+- **New `Orchestrator.runBuild()` closes the loop.** After the collaborative build, it runs an acceptance command and, on failure, feeds the output back and re-runs the team — up to `--rounds N` times. "Done" now means the checks actually pass, not just that the coordinator said `FINISHED`.
+- `orbit run "goal" --skip --verify "npm test" [--rounds N]`. Verification runs through the same danger gate as `run_command` (new **`runCheck`** in `src/tools.js`, pass/fail by exit code) and only when writes are enabled (`--skip`).
+
+### Tests
+- New **`tests/test-intake.js`** and **`tests/test-build-loop.js`** (brief parsing + fallbacks; verify pass/fail, retry-with-feedback, token accumulation, tool-policy gating). **19 suites, all green.**
+
 ## v1.5.0
 
 A large hardening + reliability + UX release from a full 8-dimension audit (34 agents), plus two

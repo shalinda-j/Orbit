@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { getProvider } from './providers/index.js';
 import { isProviderConfigured, PROVIDER_NAMES, config } from './config.js';
-import { BUILTIN_TOOLS, parseToolCall, containedPath } from './tools.js';
+import { BUILTIN_TOOLS, parseToolCall, containedPath, runCheck } from './tools.js';
 import { callTool as callMcpTool } from './mcpclient.js';
 import { Agent } from './agent.js';
 
@@ -163,6 +163,82 @@ export class Orchestrator {
       history: history,
       tokenStats: this.tokenStats
     };
+  }
+
+  /**
+   * Build-with-acceptance: run the build loop, then VERIFY the result against an
+   * acceptance command (e.g. `npm test`). If verification fails, feed the failure back
+   * to the team and re-run the loop — up to `rounds` times. This closes the loop so
+   * "done" means "passes the checks", not merely "the coordinator said FINISHED".
+   *
+   * Falls back to a single build pass when there's no verify command, or when commands
+   * are blocked by the tool policy (plan/read mode) — you can't auto-verify what you
+   * weren't allowed to build.
+   *
+   * @param {string} task
+   * @param {Object} [opts]
+   * @param {number} [opts.maxTurns=6]
+   * @param {'collaborative'|'sequential'} [opts.mode='collaborative']
+   * @param {string} [opts.verifyCmd='']   - shell command whose exit code is the acceptance gate
+   * @param {number} [opts.rounds=2]        - max build→verify rounds before giving up
+   * @param {Function} [onAgentSpeak]
+   * @returns {Promise<{finalOutput, history, tokenStats, verify:{ran,passed,rounds,output}}>}
+   */
+  async runBuild(task, { maxTurns = 6, mode = 'collaborative', verifyCmd = '', rounds = 2 } = {}, onAgentSpeak) {
+    const canVerify = !!verifyCmd && this.toolPolicy === 'all';
+    const maxRounds = canVerify ? Math.max(1, rounds) : 1;
+
+    // runCollaborative/runSequential reset token stats each call, so accumulate across rounds.
+    const combined = { promptTokens: 0, completionTokens: 0, totalTokens: 0, breakdown: {} };
+    const mergeTokens = (ts) => {
+      if (!ts) return;
+      combined.promptTokens += ts.promptTokens || 0;
+      combined.completionTokens += ts.completionTokens || 0;
+      combined.totalTokens += ts.totalTokens || 0;
+      for (const [k, v] of Object.entries(ts.breakdown || {})) {
+        const b = combined.breakdown[k] || (combined.breakdown[k] = { promptTokens: 0, completionTokens: 0, totalTokens: 0, provider: v.provider });
+        b.promptTokens += v.promptTokens || 0;
+        b.completionTokens += v.completionTokens || 0;
+        b.totalTokens += v.totalTokens || 0;
+        if (v.provider) b.provider = v.provider;
+      }
+    };
+
+    let currentTask = task;
+    let result;
+    const verify = { ran: false, passed: false, rounds: 0, output: '' };
+
+    for (let round = 1; round <= maxRounds; round++) {
+      result = mode === 'sequential'
+        ? await this.runSequential(currentTask, onAgentSpeak)
+        : await this.runCollaborative(currentTask, maxTurns, onAgentSpeak);
+      mergeTokens(result.tokenStats);
+
+      if (this.signal?.aborted) break;
+      if (!canVerify) break;
+
+      verify.ran = true;
+      verify.rounds = round;
+      if (onAgentSpeak) onAgentSpeak('System', `Verifying acceptance: \`${verifyCmd}\``, true);
+      const check = await runCheck(verifyCmd);
+      verify.output = check.output;
+
+      if (check.passed) {
+        verify.passed = true;
+        if (onAgentSpeak) onAgentSpeak('System', `✓ Acceptance passed — \`${verifyCmd}\``, false);
+        break;
+      }
+
+      if (onAgentSpeak) onAgentSpeak('System', `✗ Acceptance failed (round ${round}/${maxRounds}) — \`${verifyCmd}\``, false);
+      if (round < maxRounds) {
+        currentTask = `${task}\n\n[The previous build attempt FAILED the acceptance check \`${verifyCmd}\`. ` +
+          `Fix the code so the check passes. Failure output:]\n${String(check.output).slice(0, 2000)}`;
+      }
+    }
+
+    result.tokenStats = combined;
+    result.verify = verify;
+    return result;
   }
 
   /**
