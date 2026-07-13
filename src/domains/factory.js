@@ -10,7 +10,7 @@ export default {
   help: 'Autonomous build: discover → design → decompose → build → verify (one command)',
   commands: {
     default: {
-      desc: 'factory "build X" [--substrate inprocess|hybrid|spawn] [--verify "npm test"] [--rounds N] [--cli claude]',
+      desc: 'factory "build X" [--design single|debate] [--substrate inprocess|hybrid|spawn] [--verify "npm test"] [--rounds N] [--cli claude]',
       run: async (a, ctx) => {
         const goal = a._.length ? a._.join(' ') : a.goal;
         if (!goal) throw new Error('need a goal: factory "build X"');
@@ -23,6 +23,10 @@ export default {
         if (!['inprocess', 'hybrid', 'spawn'].includes(substrate)) {
           throw new Error('--substrate must be inprocess, hybrid, or spawn');
         }
+        const designMode = String(a.design || 'single').toLowerCase();
+        if (!['single', 'debate'].includes(designMode)) {
+          throw new Error('--design must be single or debate');
+        }
 
         ctx.print(`\n  ⚙  Orbit Factory — autonomous build`);
         ctx.print(`     goal       ${goal}`);
@@ -34,6 +38,7 @@ export default {
           providerName,
           providers: active,
           substrate,
+          designMode,
           verifyCmd: a.verify ? String(a.verify) : '',
           integrateRounds: parseInt(a.rounds, 10) || 2,
           onPhase: (_k, msg) => ctx.print(`\n  ▸ ${msg}`),
@@ -43,7 +48,7 @@ export default {
 
         ctx.print(`\n  ── Factory summary ──`);
         ctx.print(`     spec       ${res.brief.goal}`);
-        ctx.print(`     design     ${res.design.tasks.length} task(s) → ${res.taskIds.ids.map(id => '#' + id).join(' ')}`);
+        ctx.print(`     design     ${res.design.tasks.length} task(s) → ${res.taskIds.ids.map(id => '#' + id).join(' ')}${res.debateId ? `   (debate #${res.debateId} — orbit debate show ${res.debateId})` : ''}`);
         ctx.print(`     artifacts  ${res.artifactsDir}/plan.md`);
         if (res.substrate === 'inprocess') {
           ctx.print(`     built      ${res.buildResults.length} task(s) in-process`);

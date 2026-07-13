@@ -98,15 +98,88 @@ async function critiqueDesign({ provider, model, briefText, design, signal }) {
   return { ok: /^\s*APPROVED\b/i.test(txt), issues: txt };
 }
 
+// Distinct angles the competing architects each champion, so the debate explores a
+// real spread (not N near-identical drafts) before the judge converges on one.
+const PROPOSER_ANGLES = [
+  'the simplest thing that fully works (MVP-first)',
+  'a robust, extensible architecture (built to grow)',
+  'a risk-first design (handle the hardest/failure cases up front)',
+];
+
+// A critic compares the numbered candidate designs and names each one's weakness.
+async function critiqueAll({ provider, model, briefText, designs, signal }) {
+  const systemPrompt = `You are the design critic. Compare the numbered candidate designs against the brief — name each one's key weakness and which is most buildable. Be concise, no preamble.`;
+  const list = designs.map((d, i) => `#${i + 1} (${d.angle}): ${JSON.stringify(d.design).slice(0, 1500)}`).join('\n\n');
+  try {
+    const r = await provider.chat({ systemPrompt, messages: [{ role: 'user', content: `Brief:\n${briefText}\n\nCandidates:\n${list}` }], model, temperature: 0.2, signal });
+    return String(r.content || '').trim();
+  } catch { return ''; }
+}
+
+// The judge picks which candidate to build. Returns a 0-based index (defaults to the first).
+async function judgeDesigns({ provider, model, briefText, designs, critique, signal }) {
+  const systemPrompt = `You are the judge. Given the numbered candidate designs and the critique, decide which single design to build. Output ONLY its number (1-${designs.length}).`;
+  try {
+    const r = await provider.chat({ systemPrompt, messages: [{ role: 'user', content: `Brief:\n${briefText}\n\nCritique:\n${critique}\n\nWhich number is best?` }], model, temperature: 0, signal });
+    const m = String(r.content || '').match(/\d+/);
+    const n = m ? parseInt(m[0], 10) : 1;
+    return Math.min(Math.max(0, (Number.isFinite(n) ? n : 1) - 1), designs.length - 1);
+  } catch { return 0; }
+}
+
+// Phase 2 · agent-to-agent design consensus: N architects propose competing designs, a critic
+// critiques them, a judge picks the winner — all recorded to the debate store so the reasoning
+// is inspectable via `orbit debate show <id>`. Returns the chosen design + the debate id.
+async function designByDebate({ provider, briefText, proposers = 2, signal, onLog = () => {} }) {
+  const debateId = await withStore(s => {
+    const id = nextId(s, 'debate');
+    s.debates.push({
+      id, topic: `Design: ${briefText.split('\n')[0].slice(0, 60)}`, options: [], status: 'open',
+      round: 1, maxRounds: 1, judge: 'Architect-Judge', proposals: [], critiques: [],
+      votes: {}, facts: {}, verdict: '', by: 'factory', ts: now(),
+    });
+    logEvent(s, 'factory.debate.start', 'factory', { id });
+    return id;
+  });
+
+  const designs = [];
+  for (let i = 0; i < Math.max(1, proposers); i++) {
+    const angle = PROPOSER_ANGLES[i % PROPOSER_ANGLES.length];
+    const d = await designProject({ provider, briefText, extra: `\n\nDesign angle to champion: ${angle}. Make your design meaningfully distinct from other angles.`, signal });
+    if (!d) continue;
+    designs.push({ angle, design: d });
+    await withStore(s => { const dbt = s.debates.find(x => x.id === debateId); if (dbt) dbt.proposals.push({ by: `Architect(${angle})`, text: `${(d.overview || '').slice(0, 240)} [${d.tasks.length} tasks]`, ts: now() }); });
+    onLog(`proposal ${i + 1} — ${angle}`);
+  }
+  if (!designs.length) return { design: null, debateId };
+  if (designs.length === 1) {
+    await withStore(s => { const dbt = s.debates.find(x => x.id === debateId); if (dbt) { dbt.verdict = 'only one viable proposal'; dbt.status = 'closed'; } });
+    return { design: designs[0].design, debateId };
+  }
+
+  const critique = await critiqueAll({ provider, briefText, designs, signal });
+  await withStore(s => { const dbt = s.debates.find(x => x.id === debateId); if (dbt) dbt.critiques.push({ by: 'Critic', text: critique.slice(0, 500), ts: now() }); });
+
+  const winner = designs[await judgeDesigns({ provider, briefText, designs, critique, signal })];
+  await withStore(s => {
+    const dbt = s.debates.find(x => x.id === debateId);
+    if (dbt) { dbt.verdict = `Chose Architect(${winner.angle}) — ${winner.design.tasks.length} tasks`; dbt.status = 'closed'; }
+    logEvent(s, 'factory.debate.judge', 'factory', { id: debateId, angle: winner.angle });
+  });
+  onLog(`judge → ${winner.angle} (${winner.design.tasks.length} tasks)`);
+  return { design: winner.design, debateId };
+}
+
 /**
  * Run the full autonomous factory pipeline.
- * @returns {Promise<{goal,brief,design,artifactsDir,taskIds,buildResults,verify,substrate}>}
+ * @returns {Promise<{goal,brief,design,debateId,artifactsDir,taskIds,buildResults,verify,substrate}>}
  */
 export async function runFactory({
   goal,
   providerName,
   providers = [],
   substrate = 'inprocess',
+  designMode = 'single',
   verifyCmd = '',
   designRounds = 1,
   buildTurns = 4,
@@ -129,15 +202,24 @@ export async function runFactory({
   if (abort()) throw new Error('aborted');
 
   // ── Phase 2 · Design (loop-engineered) ─────────────────────────────
-  onPhase('design', 'Design — architecture, data model, diagram, task breakdown');
-  let design = await designProject({ provider, briefText, signal }) || fallbackDesign(briefText);
-  for (let r = 1; r <= Math.max(0, designRounds); r++) {
-    if (abort()) throw new Error('aborted');
-    const crit = await critiqueDesign({ provider, briefText, design, signal });
-    if (crit.ok) { onLog(`design approved (round ${r})`); break; }
-    onLog(`design round ${r}: revising against critique`);
-    const revised = await designProject({ provider, briefText, extra: `\n\nRevise to fix these gaps from review:\n${crit.issues}`, signal });
-    if (revised) design = revised;
+  // 'debate' = agents propose competing designs → critic → judge (recorded to the debate store).
+  // 'single' = one architect draft, critiqued and revised. Both converge on one design + tasks.
+  onPhase('design', `Design — ${designMode === 'debate' ? 'agent-to-agent debate → consensus' : 'architect + critique'}`);
+  let design = null, debateId = null;
+  if (designMode === 'debate') {
+    const r = await designByDebate({ provider, briefText, proposers: 2, signal, onLog });
+    design = r.design; debateId = r.debateId;
+  }
+  if (!design) {
+    design = await designProject({ provider, briefText, signal }) || fallbackDesign(briefText);
+    for (let r = 1; r <= Math.max(0, designRounds); r++) {
+      if (abort()) throw new Error('aborted');
+      const crit = await critiqueDesign({ provider, briefText, design, signal });
+      if (crit.ok) { onLog(`design approved (round ${r})`); break; }
+      onLog(`design round ${r}: revising against critique`);
+      const revised = await designProject({ provider, briefText, extra: `\n\nRevise to fix these gaps from review:\n${crit.issues}`, signal });
+      if (revised) design = revised;
+    }
   }
   onLog(`design → ${design.tasks.length} task(s)`);
 
@@ -260,5 +342,5 @@ export async function runFactory({
   } catch { /* ignore */ }
 
   onPhase('done', 'Factory run complete');
-  return { goal: raw, brief, design, artifactsDir, taskIds: { parentId, ids }, buildResults, verify, substrate };
+  return { goal: raw, brief, design, debateId, artifactsDir, taskIds: { parentId, ids }, buildResults, verify, substrate };
 }
