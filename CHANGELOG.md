@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.8.0
+
+Deepens the Conductor's design phase from a single draft into a real **agent-to-agent debate**.
+
+### `orbit factory --design debate`
+- **Phase 2 becomes a consensus loop.** Instead of one architect + a critic, N architects each propose a **competing** design from a distinct angle (MVP-first · robust/extensible · risk-first), a critic compares them, and a judge picks the winner — the "loop engineering" the pipeline is built around.
+- **The whole debate is recorded to the shared `debate` store** (proposals · critique · verdict), so the reasoning is inspectable with `orbit debate show <id>` after the run.
+- Opt-in per run: `orbit factory "goal" --design debate` (default stays `single` — one draft, critiqued and revised — for the cheap/fast path). The chosen design drives the same decompose → build → verify stages.
+
+### Tests
+- New **`tests/test-factory-debate.js`** drives the debate path end-to-end (two proposals, judge, recorded debate, then a verified build). **21 suites, all green.**
+
 ## v1.7.0
 
 The **Conductor** — one command that autonomously takes a goal to a built, verified project.
