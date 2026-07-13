@@ -1,5 +1,22 @@
 # Changelog
 
+## v1.7.0
+
+The **Conductor** — one command that autonomously takes a goal to a built, verified project.
+
+### `orbit factory "build X"`
+- **New `src/factory.js` + `factory` domain** chain every stage end to end, with no human in the loop:
+  1. **Discover** — refine the ask into a spec (`intake.js`).
+  2. **Design** — a Lead Architect drafts overview · architecture · data model · a Mermaid diagram · an ordered task breakdown, gated by a critic and revised (the "loop engineering").
+  3. **Decompose** — seed the shared task board (`store.js`) from the design.
+  4. **Build** — pluggable substrate: `inprocess` (Orbit's own agents + the build→verify loop) or `hybrid`/`spawn` (launch coding CLIs — claude/codex/… — in real terminals that build from the board).
+  5. **Integrate** — verify the whole project against `--verify "npm test"`; on failure feed it back and fix, up to `--rounds N`.
+- Artifacts (`plan.md`, `design.json`) are written to `.orbit/factory/<slug>/`, and the run is saved to the Brain for recall.
+- `orbit factory "goal" [--substrate inprocess|hybrid|spawn] [--verify "npm test"] [--rounds N] [--cli claude]`. Composes the existing pieces (intake, genesis, orchestrator, board, brain, spawn) — the Conductor is the glue, not a rewrite.
+
+### Tests
+- New **`tests/test-factory.js`** drives the whole pipeline (discover→design→decompose→build→integrate) in a throwaway workspace and asserts artifacts, board seeding, per-task builds, and whole-project verification. **20 suites, all green.**
+
 ## v1.6.0
 
 A guided build pipeline: refine the request first, then let the team build and **verify** it.
